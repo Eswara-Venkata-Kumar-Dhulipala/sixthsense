@@ -38,7 +38,7 @@ Rather than relying on a single sensing modality, SixthSense combines geometric 
 ---
 
 ## Hardware used for v2.0.0
-- 1 × VL53L5CX Time-of-Flight Sensors
+- 1 × VL53L5CX Time-of-Flight Sensor
 - Arduino UNO Q
 - Qwiic Cable With 1mm JST Connector
 <img width="960" height="1280" alt="WhatsApp Image 2026-07-05 at 21 59 37" src="https://github.com/user-attachments/assets/4968e3f6-217f-41ab-af97-992710e7f006" />
