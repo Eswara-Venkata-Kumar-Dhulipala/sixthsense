@@ -1,219 +1,687 @@
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
 
-<meta charset="UTF-8">
+    <meta charset="UTF-8">
 
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0">
 
-<title>SixthSense Dashboard</title>
+    <title>
 
-<link rel="stylesheet" href="style.css">
+        SixthSense
+
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="style.css">
+
+    <script src="socket.io.min.js"></script>
 
 </head>
 
 <body>
 
-<div class="container">
+    <!-- ========================================================== -->
+    <!-- Header                                                     -->
+    <!-- ========================================================== -->
 
-    <header>
+    <header id="app-header">
 
-        <h1>🦯 SixthSense Dashboard</h1>
+        <h1>
 
-        <div id="connectionStatus" class="connected">
-            Connected
+            SixthSense
+
+        </h1>
+
+        <h2>
+
+            ToF Observation Engine
+
+        </h2>
+
+        <div id="version-container">
+
+            <span id="application-name">
+
+                SixthSense
+
+            </span>
+
+            |
+
+            <span id="application-version">
+
+                v2.0.0.2
+
+            </span>
+
         </div>
 
     </header>
 
+    <!-- ========================================================== -->
+    <!-- Main Container                                             -->
+    <!-- ========================================================== -->
 
-    <section class="statusPanel">
+    <main id="dashboard">
 
-        <div class="card">
-            <div class="label">Frame</div>
-            <div id="frameNumber">0</div>
-        </div>
+        <!-- ====================================================== -->
+        <!-- Sensor Information Card                               -->
+        <!-- ====================================================== -->
 
-        <div class="card">
-            <div class="label">FPS</div>
-            <div id="fpsValue">0</div>
-        </div>
+        <section
+            class="card"
+            id="sensor-card">
 
-        <div class="card">
-            <div class="label">Nearest</div>
-            <div id="nearestValue">--</div>
-        </div>
+            <div class="card-header">
 
-    </section>
+                <h2>
 
+                    Sensor Information
 
-    <section class="directionPanel">
-
-        <div class="directionCard">
-
-            <div class="directionTitle">
-                LEFT
-            </div>
-
-            <div
-                id="leftDistance"
-                class="directionValue">
-
-                --
+                </h2>
 
             </div>
 
+            <div class="card-body">
+
+                <table class="info-table">
+
+                    <tr>
+
+                        <td>Sensor ID</td>
+
+                        <td>
+
+                            <span id="sensor-id">
+
+                                --
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>Sensor Name</td>
+
+                        <td>
+
+                            <span id="sensor-name">
+
+                                --
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>Status</td>
+
+                        <td>
+
+                            <span id="sensor-status">
+
+                                OFFLINE
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>Frame</td>
+
+                        <td>
+
+                            <span id="sensor-frame">
+
+                                0
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>Timestamp</td>
+
+                        <td>
+
+                            <span id="sensor-timestamp">
+
+                                0
+
+                            </span>
+
+                            ms
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>FPS</td>
+
+                        <td>
+
+                            <span id="sensor-fps">
+
+                                0
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                </table>
+
+            </div>
+
+        </section>
+
+        <!-- ====================================================== -->
+        <!-- Observation Card                                       -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="observation-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    ToF Observation
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <div class="sector-grid">
+
+                    <div
+                        class="sector-card"
+                        id="sector0-card">
+
+                        <h3>
+
+                            Sector 0
+
+                        </h3>
+
+                        <div class="distance-value">
+
+                            <span id="sector0-distance">
+
+                                --
+
+                            </span>
+
+                            mm
+
+                        </div>
+
+                    </div>
+
+                    <div
+                        class="sector-card"
+                        id="sector1-card">
+
+                        <h3>
+
+                            Sector 1
+
+                        </h3>
+
+                        <div class="distance-value">
+
+                            <span id="sector1-distance">
+
+                                --
+
+                            </span>
+
+                            mm
+
+                        </div>
+
+                    </div>
+
+                    <div
+                        class="sector-card"
+                        id="sector2-card">
+
+                        <h3>
+
+                            Sector 2
+
+                        </h3>
+
+                        <div class="distance-value">
+
+                            <span id="sector2-distance">
+
+                                --
+
+                            </span>
+
+                            mm
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+                <!-- ====================================================== -->
+        <!-- Heatmap Card                                           -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="heatmap-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    ToF Heatmap
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <canvas
+                    id="tof-canvas"
+                    width="480"
+                    height="480">
+
+                </canvas>
+
+            </div>
+
+        </section>
+
+        <!-- ====================================================== -->
+        <!-- Observation JSON Card                                 -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="json-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    ToF Observation (JSON)
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <pre id="observation-json">
+
+Waiting for observations...
+
+                </pre>
+
+            </div>
+
+        </section>
+
+        <!-- ====================================================== -->
+        <!-- System Status Card                                     -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="system-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    System Status
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <table class="info-table">
+
+                    <tr>
+
+                        <td>
+
+                            Arduino Bridge
+
+                        </td>
+
+                        <td>
+
+                            <span id="bridge-status">
+
+                                DISCONNECTED
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>
+
+                            Browser
+
+                        </td>
+
+                        <td>
+
+                            <span id="browser-status">
+
+                                DISCONNECTED
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>
+
+                            ToF Sensor
+
+                        </td>
+
+                        <td>
+
+                            <span id="tof-status">
+
+                                OFFLINE
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>
+
+                            History Buffer
+
+                        </td>
+
+                        <td>
+
+                            <span id="history-size">
+
+                                0
+
+                            </span>
+
+                            /
+
+                            <span id="history-capacity">
+
+                                20
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                </table>
+
+            </div>
+
+        </section>
+
+        <!-- ====================================================== -->
+        <!-- Future Camera Placeholder                              -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="camera-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    Camera Observation
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <div class="placeholder">
+
+                    Coming in Version 3.0.0
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- ====================================================== -->
+        <!-- Future Context Placeholder                             -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="context-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    Context Engine
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <div class="placeholder">
+
+                    Coming in Version 4.0.0
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- ====================================================== -->
+        <!-- Future Output Placeholder                              -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="output-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    Output Manager
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <div class="placeholder">
+
+                    Coming in Version 5.0.0
+
+                </div>
+
+            </div>
+
+        </section>
+                <!-- ====================================================== -->
+        <!-- Debug Card                                              -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card"
+            id="debug-card">
+
+            <div class="card-header">
+
+                <h2>
+
+                    Debug Information
+
+                </h2>
+
+            </div>
+
+            <div class="card-body">
+
+                <table class="info-table">
+
+                    <tr>
+
+                        <td>
+
+                            Dashboard Version
+
+                        </td>
+
+                        <td>
+
+                            <span id="dashboard-version">
+
+                                v2.0.0.2
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>
+
+                            Last Update
+
+                        </td>
+
+                        <td>
+
+                            <span id="last-update">
+
+                                --
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td>
+
+                            Messages Received
+
+                        </td>
+
+                        <td>
+
+                            <span id="message-count">
+
+                                0
+
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- ========================================================== -->
+    <!-- Footer                                                     -->
+    <!-- ========================================================== -->
+
+    <footer id="footer">
+
+        <div>
+
+            SixthSense
+
         </div>
 
-        <div class="directionCard">
+        <div>
 
-            <div class="directionTitle">
-                CENTER
-            </div>
-
-            <div
-                id="centerDistance"
-                class="directionValue">
-
-                --
-
-            </div>
+            Arduino UNO Q
 
         </div>
 
-        <div class="directionCard">
+        <div>
 
-            <div class="directionTitle">
-                RIGHT
-            </div>
-
-            <div
-                id="rightDistance"
-                class="directionValue">
-
-                --
-
-            </div>
+            ToF Observation Engine
 
         </div>
 
-    </section>
+    </footer>
 
+    <!-- ========================================================== -->
+    <!-- JavaScript                                                 -->
+    <!-- ========================================================== -->
 
-    <section class="heatmapPanel">
-
-        <h2>
-
-            VL53L5CX
-            8×8 Depth Image
-
-        </h2>
-
-        <canvas
-            id="heatmapCanvas"
-            width="640"
-            height="640">
-
-        </canvas>
-
-    </section>
-
-
-    <section class="legendPanel">
-
-        <div class="legendItem">
-
-            <div
-                class="legendColor"
-                style="background:#ff0000">
-
-            </div>
-
-            <span>
-
-                Very Near
-
-            </span>
-
-        </div>
-
-
-        <div class="legendItem">
-
-            <div
-                class="legendColor"
-                style="background:#ff7f00">
-
-            </div>
-
-            <span>
-
-                Near
-
-            </span>
-
-        </div>
-
-
-        <div class="legendItem">
-
-            <div
-                class="legendColor"
-                style="background:#ffff00">
-
-            </div>
-
-            <span>
-
-                Medium
-
-            </span>
-
-        </div>
-
-
-        <div class="legendItem">
-
-            <div
-                class="legendColor"
-                style="background:#00ff00">
-
-            </div>
-
-            <span>
-
-                Far
-
-            </span>
-
-        </div>
-
-
-        <div class="legendItem">
-
-            <div
-                class="legendColor"
-                style="background:#0066ff">
-
-            </div>
-
-            <span>
-
-                Very Far
-
-            </span>
-
-        </div>
-
-    </section>
-
-</div>
-
-<script src="libs/socket.io.min.js"></script>
-
-<script src="app.js"></script>
+    <script src="app.js"></script>
 
 </body>
 
