@@ -116,12 +116,7 @@ Implemented
 # Software Architecture
 
 ```
-
-Sensors
-
-↓
-
-Sketch (Hardware Layer)
+Sketch
 
 ↓
 
@@ -129,11 +124,15 @@ Bridge RPC
 
 ↓
 
-Python (Observation Engines)
+Observation Engines
 
 ↓
 
 Context Engine
+
+↓
+
+Attention Engine
 
 ↓
 
@@ -194,7 +193,6 @@ Version 2.0.0 establishes the complete infrastructure for the ToF Observation En
 Features
 
 - Read ToF frames
-- Maintain history
 - Divide frame into sectors
 - Generate observations
 - Display observations on dashboard
@@ -211,7 +209,7 @@ Velocity Estimation
 
 ## v2.2.0
 
-Motion Classification
+Approach / Recede Classification
 
 ---
 
