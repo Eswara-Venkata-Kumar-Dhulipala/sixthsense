@@ -260,24 +260,6 @@ The project follows the following principles.
 
 ---
 
-# Documentation
-
-The project documentation consists of three documents.
-
-README.md
-
-Current project overview.
-
-SixthSense_vX.Y.Z.md
-
-Detailed Software Design Document for a specific version.
-
-CHANGELOG.md
-
-History of changes across all versions.
-
----
-
 # License
 
 MPL-2.0
