@@ -11,6 +11,15 @@ SixthSense is an AI-powered wearable system designed to improve environmental aw
 The system continuously observes the surrounding environment, converts raw sensor data into structured observations, reasons about those observations, and finally provides intuitive feedback to the user through vibration motors and spatial audio.
 
 The project is being developed using **Arduino UNO Q** and **Arduino App Lab**.
+<img width="1917" height="965" alt="image" src="https://github.com/user-attachments/assets/fce2f555-09e5-4eb5-9e6d-0a301e34e8b3" />
+<img width="1915" height="967" alt="image" src="https://github.com/user-attachments/assets/57b406a6-8333-460b-83b8-1a2038379d49" />
+<img width="1915" height="972" alt="image" src="https://github.com/user-attachments/assets/e8450085-320f-423b-b244-3983818326e9" />
+<img width="1916" height="966" alt="image" src="https://github.com/user-attachments/assets/b3835375-dd2b-4285-bd75-3034f1347426" />
+<img width="1916" height="962" alt="image" src="https://github.com/user-attachments/assets/fae086e5-fc32-4815-95cf-5c2ab39710f8" />
+
+
+
+
 
 ---
 
