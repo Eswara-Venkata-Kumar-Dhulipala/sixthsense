@@ -37,6 +37,29 @@ Rather than relying on a single sensing modality, SixthSense combines geometric 
 
 ---
 
+## Hardware used for v2.0.0
+- 1 × VL53L5CX Time-of-Flight Sensors
+- Arduino UNO Q
+
+---
+
+## Software Stack
+Arduino App Lab
+
+Arduino UNO Q
+
+Python
+
+JavaScript
+
+HTML
+
+CSS
+
+SparkFun VL53L5CX Library
+
+---
+
 # Development Philosophy
 
 The software is developed incrementally.
@@ -75,7 +98,7 @@ v2.0.0
 
 Status
 
-In Development
+Stable Observation Engine
 
 ```
 
@@ -86,9 +109,6 @@ Implemented
 - Working Python backend
 - Working Web Dashboard
 - Working Heatmap
-
-Currently under development
-
 - ToF Observation Engine
 
 ---
@@ -160,7 +180,8 @@ SixthSense
 ├── index.html
 ├── app.js
 ├── style.css
-└── socket.io.min.js
+└── libs/
+    └── socket.io.min.js
 
 ```
 
@@ -181,12 +202,6 @@ Features
 ---
 
 # Planned Roadmap
-
-## v2.0.0
-
-ToF Observation Engine
-
----
 
 ## v2.1.0
 
