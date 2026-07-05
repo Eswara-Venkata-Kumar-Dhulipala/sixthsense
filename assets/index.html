@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>SixthSense Dashboard</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <header>
+
+        <h1>🦯 SixthSense Dashboard</h1>
+
+        <div id="connectionStatus" class="connected">
+            Connected
+        </div>
+
+    </header>
+
+
+    <section class="statusPanel">
+
+        <div class="card">
+            <div class="label">Frame</div>
+            <div id="frameNumber">0</div>
+        </div>
+
+        <div class="card">
+            <div class="label">FPS</div>
+            <div id="fpsValue">0</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Nearest</div>
+            <div id="nearestValue">--</div>
+        </div>
+
+    </section>
+
+
+    <section class="directionPanel">
+
+        <div class="directionCard">
+
+            <div class="directionTitle">
+                LEFT
+            </div>
+
+            <div
+                id="leftDistance"
+                class="directionValue">
+
+                --
+
+            </div>
+
+        </div>
+
+        <div class="directionCard">
+
+            <div class="directionTitle">
+                CENTER
+            </div>
+
+            <div
+                id="centerDistance"
+                class="directionValue">
+
+                --
+
+            </div>
+
+        </div>
+
+        <div class="directionCard">
+
+            <div class="directionTitle">
+                RIGHT
+            </div>
+
+            <div
+                id="rightDistance"
+                class="directionValue">
+
+                --
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <section class="heatmapPanel">
+
+        <h2>
+
+            VL53L5CX
+            8×8 Depth Image
+
+        </h2>
+
+        <canvas
+            id="heatmapCanvas"
+            width="640"
+            height="640">
+
+        </canvas>
+
+    </section>
+
+
+    <section class="legendPanel">
+
+        <div class="legendItem">
+
+            <div
+                class="legendColor"
+                style="background:#ff0000">
+
+            </div>
+
+            <span>
+
+                Very Near
+
+            </span>
+
+        </div>
+
+
+        <div class="legendItem">
+
+            <div
+                class="legendColor"
+                style="background:#ff7f00">
+
+            </div>
+
+            <span>
+
+                Near
+
+            </span>
+
+        </div>
+
+
+        <div class="legendItem">
+
+            <div
+                class="legendColor"
+                style="background:#ffff00">
+
+            </div>
+
+            <span>
+
+                Medium
+
+            </span>
+
+        </div>
+
+
+        <div class="legendItem">
+
+            <div
+                class="legendColor"
+                style="background:#00ff00">
+
+            </div>
+
+            <span>
+
+                Far
+
+            </span>
+
+        </div>
+
+
+        <div class="legendItem">
+
+            <div
+                class="legendColor"
+                style="background:#0066ff">
+
+            </div>
+
+            <span>
+
+                Very Far
+
+            </span>
+
+        </div>
+
+    </section>
+
+</div>
+
+<script src="libs/socket.io.min.js"></script>
+
+<script src="app.js"></script>
+
+</body>
+
+</html>

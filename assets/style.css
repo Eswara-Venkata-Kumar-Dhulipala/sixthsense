@@ -1,0 +1,346 @@
+/******************************************************************************
+ SixthSense Dashboard
+******************************************************************************/
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+
+    background: #202124;
+
+    color: white;
+
+    font-family: Arial, Helvetica, sans-serif;
+
+    min-height: 100vh;
+}
+
+.container {
+
+    width: 95%;
+
+    max-width: 1400px;
+
+    margin: auto;
+
+    padding: 25px;
+}
+
+/******************************************************************************
+ Header
+******************************************************************************/
+
+header {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    margin-bottom: 25px;
+}
+
+header h1 {
+
+    font-size: 2.2rem;
+
+    font-weight: bold;
+}
+
+/******************************************************************************
+ Connection Status
+******************************************************************************/
+
+.connected {
+
+    background: #2e7d32;
+
+    color: white;
+
+    padding: 10px 20px;
+
+    border-radius: 10px;
+
+    font-weight: bold;
+}
+
+.disconnected {
+
+    background: #c62828;
+
+    color: white;
+
+    padding: 10px 20px;
+
+    border-radius: 10px;
+
+    font-weight: bold;
+}
+
+/******************************************************************************
+ Status Panel
+******************************************************************************/
+
+.statusPanel {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    gap: 20px;
+
+    margin-bottom: 25px;
+}
+
+.card {
+
+    flex: 1;
+
+    background: #303134;
+
+    border-radius: 12px;
+
+    padding: 20px;
+
+    text-align: center;
+
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.label {
+
+    font-size: 18px;
+
+    color: #bbbbbb;
+
+    margin-bottom: 10px;
+}
+
+.card div:last-child {
+
+    font-size: 34px;
+
+    font-weight: bold;
+}
+
+/******************************************************************************
+ Direction Panel
+******************************************************************************/
+
+.directionPanel {
+
+    display: flex;
+
+    gap: 20px;
+
+    margin-bottom: 30px;
+}
+
+.directionCard {
+
+    flex: 1;
+
+    background: #303134;
+
+    border-radius: 12px;
+
+    padding: 20px;
+
+    text-align: center;
+
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.directionTitle {
+
+    font-size: 22px;
+
+    color: #bbbbbb;
+
+    margin-bottom: 15px;
+}
+
+.directionValue {
+
+    font-size: 40px;
+
+    font-weight: bold;
+
+    color: #00d8ff;
+}
+
+/******************************************************************************
+ Heatmap
+******************************************************************************/
+
+.heatmapPanel {
+
+    background: #303134;
+
+    border-radius: 12px;
+
+    padding: 25px;
+
+    margin-bottom: 30px;
+
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.heatmapPanel h2 {
+
+    text-align: center;
+
+    margin-bottom: 20px;
+
+    font-size: 26px;
+}
+
+#heatmapCanvas {
+
+    display: block;
+
+    margin: auto;
+
+    width: 640px;
+
+    height: 640px;
+
+    border-radius: 10px;
+
+    border: 3px solid #555;
+
+    background: black;
+}
+
+/******************************************************************************
+ Legend
+******************************************************************************/
+
+.legendPanel {
+
+    display: flex;
+
+    justify-content: center;
+
+    gap: 30px;
+
+    flex-wrap: wrap;
+
+    margin-bottom: 40px;
+}
+
+.legendItem {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    font-size: 18px;
+}
+
+.legendColor {
+
+    width: 25px;
+
+    height: 25px;
+
+    border-radius: 4px;
+
+    border: 1px solid white;
+}
+
+/******************************************************************************
+ Footer (Reserved)
+******************************************************************************/
+
+footer {
+
+    margin-top: 30px;
+
+    text-align: center;
+
+    color: #aaaaaa;
+
+    font-size: 15px;
+}
+
+/******************************************************************************
+ Responsive
+******************************************************************************/
+
+@media(max-width:1100px)
+{
+
+.statusPanel {
+
+    flex-direction: column;
+}
+
+.directionPanel {
+
+    flex-direction: column;
+}
+
+#heatmapCanvas {
+
+    width: 520px;
+
+    height: 520px;
+}
+
+}
+
+@media(max-width:700px)
+{
+
+.container {
+
+    width: 98%;
+
+    padding: 10px;
+}
+
+header {
+
+    flex-direction: column;
+
+    gap: 15px;
+}
+
+header h1 {
+
+    font-size: 1.8rem;
+}
+
+.card div:last-child {
+
+    font-size: 28px;
+}
+
+.directionValue {
+
+    font-size: 32px;
+}
+
+#heatmapCanvas {
+
+    width: 95vw;
+
+    height: 95vw;
+}
+
+.legendPanel {
+
+    flex-direction: column;
+
+    align-items: center;
+}
+
+}
