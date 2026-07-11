@@ -118,34 +118,44 @@ Implemented
 
 # Software Architecture
 
-```
-Sketch
+                     SixthSense
 
-↓
-
-Bridge RPC
-
-↓
-
-Observation Engines
-
-↓
-
-Context Engine
-
-↓
-
-Attention Engine
-
-↓
-
-Output Manager
-
-↓
-
-Dashboard
-
-```
+                ┌──────────────────┐
+                │  VL53L5CX Sensor │
+                └──────────────────┘
+                         │
+                         ▼
+                ┌──────────────────┐
+                │ Arduino Sketch   │
+                └──────────────────┘
+                         │
+                         ▼
+                ┌──────────────────┐
+                │ Bridge RPC       │
+                └──────────────────┘
+                         │
+                         ▼
+                ┌──────────────────┐
+                │ Observation      │
+                │ Engine           │
+                └──────────────────┘
+                         │
+                         ▼
+              (Future Releases)
+                         │
+                ┌──────────────────┐
+                │ Context Engine   │
+                └──────────────────┘
+                         │
+                         ▼
+                ┌──────────────────┐
+                │ Attention Engine │
+                └──────────────────┘
+                         │
+                         ▼
+                ┌──────────────────┐
+                │ Output Manager   │
+                └──────────────────┘
 
 ---
 
@@ -202,47 +212,54 @@ Features
 
 ---
 
-# Planned Roadmap
+# Roadmap
 
-## v2.1.0
-
-Velocity Estimation
-
----
-
-## v2.2.0
-
-Approach / Recede Classification
-
----
-
-## v2.3.0
-
-Persistence Estimation
+| Version | Milestone | Status |
+|----------|-----------|--------|
+| ✅ v2.0.0 | First Stable ToF Observation Engine | Released |
+| 🚧 v2.1.0 | Temporal ToF Observation Engine | In Development |
+| ⏳ v2.2.0 | Persistent ToF Observation Engine | Planned |
+| ⏳ v3.0.0 | Camera Observation Engine | Planned |
+| ⏳ v4.0.0 | Context Engine | Planned |
+| ⏳ v5.0.0 | Attention Engine | Planned |
+| ⏳ v6.0.0 | Output Manager | Planned |
+| ⏳ v7.0.0 | Integrated SixthSense Wearable | Vision |
 
 ---
 
-## v2.4.0
+# Documentation
 
-Confidence Estimation
+Detailed design specifications are available in the `docs/` directory.
 
----
-
-## v3.0.0
-
-Camera Observation Engine
+- **v2.0.0** – First Stable ToF Observation Engine
+- **v2.1.0** – Temporal ToF Observation Engine
+- CHANGELOG
 
 ---
 
-## v4.0.0
+# Current Development (v2.1.0)
 
-Context Engine
+The current development branch focuses on transforming the Observation Engine from a static sensing layer into a temporal sensing layer.
 
----
+### Planned Features
 
-## v5.0.0
+- Rolling Observation History
+- Sector-wise Velocity Estimation
+- Velocity History
+- Velocity Filtering
+- Enhanced ToFObservation API
+- Dashboard Velocity Visualization
 
-Output Manager
+Version 2.1.0 intentionally excludes:
+
+- Persistence
+- Confidence Estimation
+- Camera Observation Engine
+- Context Engine
+- Spatial Audio
+- Haptic Feedback
+
+These capabilities are planned for future releases.
 
 ---
 
