@@ -145,11 +145,7 @@ Sensor
 
 ↓
 
-Observation Engine
-
-↓
-
-ToFObservation
+Observation Engine (Generates ToFObservation)
 
 ↓
 
@@ -233,8 +229,6 @@ Each additional Time-of-Flight sensor runs an independent instance of the Observ
 
 | Layer | Technology |
 |--------|------------|
-| Hardware | Arduino UNO Q |
-| Sensor | SparkFun VL53L5CX |
 | Development Environment | Arduino App Lab |
 | Firmware | Arduino Sketch (C++) |
 | Backend | Python |
@@ -778,105 +772,6 @@ The objectives of this release are:
 The goal is to transform the Observation Engine from a **static sensing layer** into a **temporal sensing layer** while preserving the existing observation interface.
 
 Future releases will build upon this stable foundation rather than replacing it.
-
-# Design Principles
-
-The architecture of SixthSense is guided by a small set of engineering principles that influence every release.
-
-These principles help keep the software scalable, maintainable and easy to extend as new capabilities are introduced.
-
----
-
-## Observation Before Decision
-
-The fundamental principle of SixthSense is that sensors should **observe**, not **decide**.
-
-Every Time-of-Flight sensor converts raw measurements into a structured `ToFObservation`.
-
-Higher-level architectural layers consume these observations to reason about the surrounding environment before determining what information should be communicated to the user.
-
-This separation ensures that sensing remains independent of decision making.
-
----
-
-## Single Responsibility
-
-Every architectural layer has one clearly defined responsibility.
-
-| Layer | Responsibility |
-|--------|----------------|
-| Arduino Sketch | Sensor acquisition |
-| Observation Engine | Generate observations |
-| Context Engine | Understand the environment |
-| Attention Engine | Prioritize important events |
-| Feedback Engine | Generate user feedback |
-
-Keeping responsibilities separate simplifies implementation, testing and future development.
-
----
-
-## Incremental Development
-
-SixthSense is developed incrementally.
-
-Each release introduces one complete architectural capability before the next capability is added.
-
-This development strategy provides:
-
-- Stable releases
-- Continuous validation
-- Easier debugging
-- Reduced technical debt
-- Clean architectural evolution
-
----
-
-## Modular Observation Engine
-
-The Observation Engine is designed to be reusable.
-
-Each Time-of-Flight sensor executes the same Observation Engine and independently produces its own `ToFObservation`.
-
-This allows the software to scale naturally from a single sensor prototype to a six-sensor wearable system without redesigning the Observation Engine.
-
----
-
-## Configuration Driven
-
-Frequently adjusted parameters are maintained in a centralized configuration rather than being distributed throughout the software.
-
-Typical configuration parameters include:
-
-- History Buffer Capacity
-- Velocity Window
-- Minimum Time Interval
-- Invalid Distance Threshold
-- Maximum Detection Distance
-
-Centralizing configuration improves maintainability and simplifies experimentation during development.
-
----
-
-## Production-Oriented Architecture
-
-Although the current prototype is implemented using Arduino App Lab, the software architecture is designed using principles commonly found in production embedded systems.
-
-The long-term objective is to ensure that the architecture remains maintainable as the system grows from a single-sensor prototype to a complete wearable platform.
-
----
-
-## Documentation First
-
-Every stable release is accompanied by versioned documentation.
-
-Each milestone includes:
-
-- Updated README
-- Version Design Document
-- CHANGELOG
-- GitHub Release
-
-Maintaining architecture and implementation together ensures that the documentation evolves alongside the software rather than becoming outdated.
 
 ---
 
