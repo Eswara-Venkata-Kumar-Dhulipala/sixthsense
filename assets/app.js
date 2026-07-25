@@ -2,11 +2,9 @@
  *
  * SixthSense
  *
- * Version : 2.0.0.2
+ * Version : 2.1.0
  *
  * Dashboard JavaScript
- *
- * Platform : Arduino UNO Q
  *
  ******************************************************************************/
 
@@ -16,7 +14,7 @@
 
 const APP_NAME = "SixthSense";
 
-const APP_VERSION = "2.0.0.2";
+const APP_VERSION = "2.1.0";
 
 const HEATMAP_ROWS = 8;
 
@@ -42,17 +40,19 @@ let connected = false;
  * Heatmap
  ******************************************************************************/
 
-const canvas = document.getElementById("tof-canvas");
+const canvas =
+    document.getElementById("tof-canvas");
 
-const ctx = canvas.getContext("2d");
+const ctx =
+    canvas.getContext("2d");
 
 /******************************************************************************
  * Cached DOM Elements
  ******************************************************************************/
 
-/*----------------------------------------------------------
+/*---------------------------------------------------------------------------
 Sensor Information
-----------------------------------------------------------*/
+---------------------------------------------------------------------------*/
 
 const sensorIdElement =
     document.getElementById("sensor-id");
@@ -72,9 +72,9 @@ const sensorTimestampElement =
 const sensorFpsElement =
     document.getElementById("sensor-fps");
 
-/*----------------------------------------------------------
+/*---------------------------------------------------------------------------
 Sector Cards
-----------------------------------------------------------*/
+---------------------------------------------------------------------------*/
 
 const sector0DistanceElement =
     document.getElementById("sector0-distance");
@@ -85,9 +85,31 @@ const sector1DistanceElement =
 const sector2DistanceElement =
     document.getElementById("sector2-distance");
 
-/*----------------------------------------------------------
+/*
+ * New in v2.1.0
+ */
+
+const sector0VelocityElement =
+    document.getElementById("sector0-velocity");
+
+const sector1VelocityElement =
+    document.getElementById("sector1-velocity");
+
+const sector2VelocityElement =
+    document.getElementById("sector2-velocity");
+
+const sector0StateElement =
+    document.getElementById("sector0-state");
+
+const sector1StateElement =
+    document.getElementById("sector1-state");
+
+const sector2StateElement =
+    document.getElementById("sector2-state");
+
+/*---------------------------------------------------------------------------
 System Status
-----------------------------------------------------------*/
+---------------------------------------------------------------------------*/
 
 const bridgeStatusElement =
     document.getElementById("bridge-status");
@@ -104,9 +126,9 @@ const historySizeElement =
 const historyCapacityElement =
     document.getElementById("history-capacity");
 
-/*----------------------------------------------------------
+/*---------------------------------------------------------------------------
 Debug
-----------------------------------------------------------*/
+---------------------------------------------------------------------------*/
 
 const observationJsonElement =
     document.getElementById("observation-json");
@@ -136,10 +158,20 @@ socket.on("connect", () =>
 
     console.log("Connected to backend.");
 
-    browserStatusElement.textContent = "CONNECTED";
-    browserStatusElement.className = "status-online";
+    browserStatusElement.textContent =
+        "CONNECTED";
 
-    socket.emit("get_initial_state");
+    browserStatusElement.className =
+        "status-online";
+
+    /*
+     * Arduino App Lab expects a payload.
+     */
+
+    socket.emit(
+        "get_initial_state",
+        {}
+    );
 });
 
 socket.on("disconnect", () =>
@@ -148,27 +180,32 @@ socket.on("disconnect", () =>
 
     console.log("Disconnected.");
 
-    browserStatusElement.textContent = "DISCONNECTED";
-    browserStatusElement.className = "status-offline";
+    browserStatusElement.textContent =
+        "DISCONNECTED";
+
+    browserStatusElement.className =
+        "status-offline";
 });
 
 /******************************************************************************
- * Dashboard Message
+ * Dashboard Messages
  ******************************************************************************/
 
 socket.on("tof_frame", (message) =>
 {
     messageCount++;
 
-    messageCountElement.textContent = messageCount;
+    messageCountElement.textContent =
+        messageCount;
 
     lastUpdateElement.textContent =
         new Date().toLocaleTimeString();
 
-    observation = message.observation;
+    observation =
+        message.observation;
 
     updateDashboard(message);
-    
+
     updateHeatmap(message);
 });
 
@@ -178,12 +215,18 @@ socket.on("tof_frame", (message) =>
 
 window.addEventListener("load", () =>
 {
-    dashboardVersionElement.textContent = APP_VERSION;
+    dashboardVersionElement.textContent =
+        APP_VERSION;
 
-    historyCapacityElement.textContent = 20;
+    historyCapacityElement.textContent =
+        20;
 
-    console.log(APP_NAME + " Dashboard Started");
+    console.log(
+        APP_NAME +
+        " Dashboard Started"
+    );
 });
+
 /******************************************************************************
  * Dashboard Update
  ******************************************************************************/
@@ -198,13 +241,21 @@ function updateDashboard(message)
 
     observation = message.observation;
 
-    updateSensorInformation(observation);
+    updateSensorInformation(
+        observation
+    );
 
-    updateSectorCards(observation);
+    updateSectorCards(
+        observation
+    );
 
-    updateObservationJSON(observation);
+    updateSystemStatus(
+        observation
+    );
 
-    updateSystemStatus(observation);
+    updateObservationJSON(
+        observation
+    );
 }
 
 /******************************************************************************
@@ -231,10 +282,6 @@ function updateSensorInformation(observation)
     sensorFpsElement.textContent =
         observation.fps;
 
-    //
-    // Status colour
-    //
-
     sensorStatusElement.className = "";
 
     if (observation.status === "ONLINE")
@@ -260,17 +307,77 @@ function updateSectorCards(observation)
     if (!observation.sectors)
         return;
 
-    if (observation.sectors.length < 3)
+    if (observation.sectors.length !== 3)
         return;
 
-    sector0DistanceElement.textContent =
-        observation.sectors[0].distance;
+    updateSector(
+        observation.sectors[0],
+        sector0DistanceElement,
+        sector0VelocityElement,
+        sector0StateElement
+    );
 
-    sector1DistanceElement.textContent =
-        observation.sectors[1].distance;
+    updateSector(
+        observation.sectors[1],
+        sector1DistanceElement,
+        sector1VelocityElement,
+        sector1StateElement
+    );
 
-    sector2DistanceElement.textContent =
-        observation.sectors[2].distance;
+    updateSector(
+        observation.sectors[2],
+        sector2DistanceElement,
+        sector2VelocityElement,
+        sector2StateElement
+    );
+}
+
+/******************************************************************************
+ * Sector Update
+ ******************************************************************************/
+
+function updateSector(
+    sector,
+    distanceElement,
+    velocityElement,
+    stateElement
+)
+{
+    distanceElement.textContent =
+        sector.distance_mm;
+
+    velocityElement.textContent =
+        sector.velocity_mmps.toFixed(1);
+
+    stateElement.textContent =
+        sector.velocity_state;
+
+    stateElement.className = "";
+
+    switch (sector.velocity_state)
+    {
+        case "Approaching":
+
+            stateElement.classList.add(
+                "status-danger"
+            );
+
+            break;
+
+        case "Receding":
+
+            stateElement.classList.add(
+                "status-online"
+            );
+
+            break;
+
+        default:
+
+            stateElement.classList.add(
+                "status-warning"
+            );
+    }
 }
 
 /******************************************************************************
@@ -293,10 +400,6 @@ function updateObservationJSON(observation)
 
 function updateSystemStatus(observation)
 {
-    //
-    // Browser
-    //
-
     if (connected)
     {
         browserStatusElement.textContent =
@@ -314,19 +417,11 @@ function updateSystemStatus(observation)
             "status-offline";
     }
 
-    //
-    // Bridge
-    //
-
     bridgeStatusElement.textContent =
         "CONNECTED";
 
     bridgeStatusElement.className =
         "status-online";
-
-    //
-    // ToF
-    //
 
     tofStatusElement.textContent =
         observation.status;
@@ -346,23 +441,32 @@ function updateSystemStatus(observation)
         );
     }
 
-    //
-    // History Buffer
-    //
-    // (Will become dynamic in v2.1.0)
-    //
+    historySizeElement.textContent =
+        observation.history_size;
 
-    historySizeElement.textContent = "--";
+    historyCapacityElement.textContent =
+        "20";
 }
+
 /******************************************************************************
  * Heatmap Renderer
  ******************************************************************************/
 
-function drawHeatmap(image)
+function updateHeatmap(message)
 {
-    if (!image)
+    if (!message)
         return;
 
+    if (!message.image)
+        return;
+
+    drawHeatmap(
+        message.image
+    );
+}
+
+function drawHeatmap(image)
+{
     const rows = image.length;
 
     const cols = image[0].length;
@@ -406,16 +510,16 @@ function drawHeatmap(image)
                 cellHeight
             );
 
-            ctx.fillStyle = "#000";
-
-            ctx.font = "12px Arial";
-
-            ctx.textAlign = "center";
-
-            ctx.textBaseline = "middle";
-
             if (distance !== 0)
             {
+                ctx.fillStyle = "#000";
+
+                ctx.font = "12px Arial";
+
+                ctx.textAlign = "center";
+
+                ctx.textBaseline = "middle";
+
                 ctx.fillText(
                     distance,
                     col * cellWidth + cellWidth / 2,
@@ -444,27 +548,27 @@ function drawSectorBoundaries(
 
     ctx.lineWidth = 3;
 
-    //
-    // Sector 0 | Sector 1
-    //
+    /*
+     * Sector 0 | Sector 1
+     */
 
     ctx.beginPath();
 
     ctx.moveTo(
-        cellWidth * 3,
+        cellWidth * 2,
         0
     );
 
     ctx.lineTo(
-        cellWidth * 3,
+        cellWidth * 2,
         canvas.height
     );
 
     ctx.stroke();
 
-    //
-    // Sector 1 | Sector 2
-    //
+    /*
+     * Sector 1 | Sector 2
+     */
 
     ctx.beginPath();
 
@@ -501,34 +605,17 @@ function distanceToColor(distance)
             MAX_DISTANCE
         ) / MAX_DISTANCE;
 
-    //
-    // Hue:
-    //
-    // 0 mm      -> Red
-    // 3000 mm   -> Green
-    //
+    /*
+     * Hue
+     *
+     * 0 mm      -> Red
+     * 3000 mm   -> Green
+     */
 
     const hue =
         normalized * 120;
 
     return `hsl(${hue},100%,50%)`;
-}
-
-/******************************************************************************
- * Heatmap Update
- ******************************************************************************/
-
-function updateHeatmap(message)
-{
-    if (!message)
-        return;
-
-    if (!message.image)
-        return;
-
-    drawHeatmap(
-        message.image
-    );
 }
 
 /******************************************************************************
@@ -558,7 +645,7 @@ function setStatus(
 
     element.className = "";
 
-    switch(value)
+    switch (value)
     {
         case "ONLINE":
 
@@ -576,6 +663,30 @@ function setStatus(
 
             break;
 
+        case "Approaching":
+
+            element.classList.add(
+                "status-danger"
+            );
+
+            break;
+
+        case "Receding":
+
+            element.classList.add(
+                "status-online"
+            );
+
+            break;
+
+        case "Stationary":
+
+            element.classList.add(
+                "status-warning"
+            );
+
+            break;
+
         default:
 
             element.classList.add(
@@ -583,8 +694,9 @@ function setStatus(
             );
     }
 }
+
 /******************************************************************************
- * Initialization
+ * Dashboard Initialization
  ******************************************************************************/
 
 function initializeDashboard()
@@ -618,14 +730,14 @@ function initializeDashboard()
     tofStatusElement.className =
         "status-offline";
 
+    historySizeElement.textContent =
+        "0";
+
     historyCapacityElement.textContent =
         "20";
 
-    historySizeElement.textContent =
-        "--";
-
     observationJsonElement.textContent =
-        "Waiting for ToF observations...";
+        "Waiting for observations...";
 }
 
 /******************************************************************************
@@ -648,73 +760,114 @@ window.addEventListener(
     "resize",
     () =>
     {
-        if(observation == null)
+        if (!observation)
             return;
 
-        //
-        // Redraw heatmap
-        //
-
         drawHeatmap(
-            observation.image ??
-            []
+            observation.image ?? []
         );
     }
 );
 
 /******************************************************************************
- * Future Hooks
+ * Dashboard Refresh
+ *
+ * Reserved for future versions.
  ******************************************************************************/
 
-/*
-Version 2.1.0
+function refreshDashboard()
+{
+    if (!observation)
+        return;
 
-    Velocity Engine
+    updateDashboard(
+        {
+            observation: observation
+        }
+    );
+}
 
-        computeVelocity()
+/******************************************************************************
+ * Future Roadmap
+ *
+ * v2.2.0
+ * --------
+ *  - Observation Persistence
+ *  - Persistence Visualization
+ *
+ * v3.0.0
+ * --------
+ *  - Multi-ToF Observation
+ *  - Six Independent Observation Engines
+ *
+ * v4.0.0
+ * --------
+ *  - Context Engine
+ *
+ * v5.0.0
+ * --------
+ *  - Attention Engine
+ *
+ * v6.0.0
+ * --------
+ *  - Feedback Engine
+ *
+ ******************************************************************************/
 
-        updateVelocity()
+/******************************************************************************
+ * Dashboard Validation
+ ******************************************************************************/
 
-------------------------------------------------------------
+function validateObservation(observation)
+{
+    if (!observation)
+        return false;
 
-Version 2.2.0
+    if (!observation.sectors)
+        return false;
 
-    Persistence Engine
+    if (observation.sectors.length !== 3)
+        return false;
 
-        computePersistence()
+    return true;
+}
 
-------------------------------------------------------------
+/******************************************************************************
+ * Browser Diagnostics
+ ******************************************************************************/
 
-Version 3.0.0
+function printDashboardInfo()
+{
+    console.log("==========================================");
 
-    Camera Observation
+    console.log(APP_NAME);
 
-------------------------------------------------------------
+    console.log("Dashboard Version :", APP_VERSION);
 
-Version 4.0.0
+    console.log("Temporal ToF Observation Engine");
 
-    Context Engine
+    console.log("==========================================");
+}
 
-------------------------------------------------------------
+/******************************************************************************
+ * Application Startup
+ ******************************************************************************/
 
-Version 5.0.0
+window.addEventListener(
+    "DOMContentLoaded",
+    () =>
+    {
+        printDashboardInfo();
 
-    Attention Engine
-
-------------------------------------------------------------
-
-Version 6.0.0
-
-    Audio Engine
-
-------------------------------------------------------------
-
-Version 7.0.0
-
-    Vibration Engine
-
-*/
+        initializeDashboard();
+    }
+);
 
 /******************************************************************************
  * End of File
+ *
+ * SixthSense
+ *
+ * Version : 2.1.0
+ *
  ******************************************************************************/

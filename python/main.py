@@ -4,7 +4,7 @@
 #
 # SixthSense
 #
-# Version : 2.0.0.1
+# Version : 2.1.0
 #
 # Module  : Python Backend
 #
@@ -19,16 +19,22 @@
 #
 # NOTE
 #
-# Version 2.0.0.1 introduces the Observation Infrastructure only.
+#Version 2.1.0 introduces Temporal Observation.
 #
-# NOT IMPLEMENTED
+#Implemented
 #
-#   • Velocity
-#   • Motion
-#   • Persistence
-#   • Confidence
-#   • Context Engine
-#   • Camera Observation
+#• Observation History
+#• Velocity Estimation
+#• Velocity Smoothing
+#• Enhanced Dashboard
+#
+#Not Implemented
+#
+#• Persistence
+#• Confidence
+#• Context Engine
+#• Attention Engine
+#• Feedback Engine
 #
 ###############################################################################
 
@@ -47,7 +53,7 @@ from arduino.app_bricks.web_ui import WebUI
 
 APP_NAME = "SixthSense"
 
-APP_VERSION = "2.0.0.1"
+APP_VERSION = "2.1.0"
 
 ###############################################################################
 # Sensor Configuration
@@ -61,9 +67,39 @@ TOF_SENSOR_NAME = "Prototype ToF"
 # Observation Configuration
 ###############################################################################
 
+#
+# Number of observations stored in history
+#
+
 TOF_HISTORY_SIZE = 20
 
+#
+# Number of logical sectors
+#
+
 TOF_SECTOR_COUNT = 3
+
+###############################################################################
+# Temporal Observation Configuration (v2.1.0)
+###############################################################################
+
+#
+# Number of velocity samples used for smoothing
+#
+
+VELOCITY_WINDOW = 5
+
+#
+# Minimum valid time difference (seconds)
+#
+
+MIN_VALID_DT = 0.02
+
+#
+# Velocity classification threshold (mm/s)
+#
+
+STATIONARY_THRESHOLD = 50.0
 
 ###############################################################################
 # Dashboard Configuration
@@ -154,7 +190,26 @@ class SectorObservation:
 
     sector_name: str
 
-    distance: int
+    #
+    # Current nearest obstacle
+    #
+
+    distance_mm: int
+
+    #
+    # Estimated velocity
+    #
+    # Positive -> Moving Away
+    # Negative -> Approaching
+    #
+
+    velocity_mmps: float = 0.0
+
+    #
+    # Reserved for v2.2.0
+    #
+
+    persistence: float = 0.0
 
 
 @dataclass
@@ -177,6 +232,13 @@ class ToFObservation:
 
     sectors: list
 
+    #
+    # Number of observations currently
+    # stored inside the Observation Engine.
+    #
+
+    history_size: int = 0
+
 ###############################################################################
 # Global State
 ###############################################################################
@@ -188,12 +250,293 @@ last_timestamp = None
 fps = 0.0
 
 ###############################################################################
-# Rolling History Buffer
+# Velocity History
 ###############################################################################
 
-frame_history = deque(
-    maxlen=TOF_HISTORY_SIZE
-)
+velocity_history = {
+
+    0: deque(maxlen=VELOCITY_WINDOW),
+
+    1: deque(maxlen=VELOCITY_WINDOW),
+
+    2: deque(maxlen=VELOCITY_WINDOW)
+
+}
+
+###############################################################################
+# Observation Engine
+###############################################################################
+
+class ObservationEngine:
+    """
+    Observation Engine for one Time-of-Flight sensor.
+
+    Responsibilities
+    ----------------
+    • Build observations
+    • Maintain observation history
+    • Maintain velocity history
+    • Estimate sector velocities
+    • Produce enhanced ToF observations
+    """
+
+    def __init__(self):
+
+        self.observation_history = deque(
+            maxlen=TOF_HISTORY_SIZE
+        )
+
+        self.velocity_history = {
+
+            0: deque(maxlen=VELOCITY_WINDOW),
+
+            1: deque(maxlen=VELOCITY_WINDOW),
+
+            2: deque(maxlen=VELOCITY_WINDOW)
+
+        }
+
+    ###########################################################################
+    # Public API
+    ###########################################################################
+
+    def process_frame(
+        self,
+        frame_number,
+        timestamp,
+        fps,
+        image
+    ):
+        """
+        Process one ToF frame.
+        """
+
+        observation = self._build_observation(
+
+            frame_number,
+
+            timestamp,
+
+            fps,
+
+            image
+
+        )
+
+        self._estimate_velocity(
+            observation
+        )
+
+        self._filter_velocity(
+            observation
+        )
+
+        self._update_history(
+            observation
+        )
+
+        observation.history_size = len(
+            self.observation_history
+        )
+
+        return observation
+
+    ###########################################################################
+    # Observation History
+    ###########################################################################
+
+    def _update_history(
+        self,
+        observation
+    ):
+
+        self.observation_history.append(
+            observation
+        )
+
+    def previous_observation(self):
+
+        if len(self.observation_history) == 0:
+
+            return None
+
+        return self.observation_history[-1]
+
+    ###########################################################################
+    # Observation Builder
+    ###########################################################################
+
+    def _build_observation(
+
+        self,
+
+        frame_number,
+
+        timestamp,
+
+        fps,
+
+        image
+
+    ):
+
+        sectors = build_sector_observations(
+            image
+        )
+
+        observation = ToFObservation(
+
+            sensor_id=TOF_SENSOR_ID,
+
+            sensor_name=TOF_SENSOR_NAME,
+
+            status="ONLINE",
+
+            frame_number=frame_number,
+
+            timestamp=timestamp,
+
+            fps=fps,
+
+            sectors=sectors
+
+        )
+
+        return observation
+
+    ###########################################################################
+    # Placeholders
+    #
+    # Implemented in Part 3
+    ###########################################################################
+
+    ###########################################################################
+    # Velocity Estimation
+    ###########################################################################
+
+    def _estimate_velocity(
+        self,
+        observation
+    ):
+        """
+        Estimate sector-wise velocity using the previous observation.
+        """
+
+        previous = self.previous_observation()
+
+        #
+        # First observation
+        #
+
+        if previous is None:
+
+            for sector in observation.sectors:
+
+                sector.velocity_mmps = 0.0
+
+            return
+
+        #
+        # Time difference
+        #
+
+        dt = (
+
+            observation.timestamp
+            - previous.timestamp
+
+        ) / 1000.0
+
+        if dt < MIN_VALID_DT:
+
+            dt = MIN_VALID_DT
+
+        #
+        # Compute velocity for every sector
+        #
+
+        for current_sector, previous_sector in zip(
+
+            observation.sectors,
+
+            previous.sectors
+
+        ):
+
+            current_distance = current_sector.distance_mm
+
+            previous_distance = previous_sector.distance_mm
+
+            #
+            # Ignore invalid measurements
+            #
+
+            if current_distance == 0 or previous_distance == 0:
+
+                velocity = 0.0
+
+            else:
+
+                #
+                # Positive  -> Moving Away
+                # Negative  -> Approaching
+                #
+
+                velocity = (
+
+                    current_distance
+                    - previous_distance
+
+                ) / dt
+
+            current_sector.velocity_mmps = velocity
+
+            self.velocity_history[
+                current_sector.sector_id
+            ].append(
+                velocity
+            )
+
+    ###########################################################################
+    # Velocity Filter
+    ###########################################################################
+
+    def _filter_velocity(
+        self,
+        observation
+    ):
+        """
+        Apply moving-average smoothing to the estimated velocity.
+        """
+
+        for sector in observation.sectors:
+
+            history = self.velocity_history[
+                sector.sector_id
+            ]
+
+            if len(history) == 0:
+
+                continue
+
+            sector.velocity_mmps = round(
+
+                sum(history)
+
+                /
+
+                len(history),
+
+                1
+
+            )
+
+
+###############################################################################
+# Observation Engine Instance
+###############################################################################
+
+observation_engine = ObservationEngine()
 
 ###############################################################################
 # Browser Events
@@ -271,25 +614,6 @@ def log_header(title):
     print(title)
 
     print("============================================================")
-
-
-###############################################################################
-# Frame History
-###############################################################################
-
-def add_frame_to_history(frame):
-
-    """
-    Store the latest frame in the rolling history buffer.
-    """
-
-    frame_history.append(frame)
-
-
-def history_size():
-
-    return len(frame_history)
-
 
 ###############################################################################
 # Image Processing
@@ -376,7 +700,7 @@ def build_sector_observations(image):
 
             sector_name=SECTOR_NAMES[0],
 
-            distance=compute_sector_distance(
+            distance_mm=compute_sector_distance(
                 image,
                 0,
                 2
@@ -394,7 +718,7 @@ def build_sector_observations(image):
 
             sector_name=SECTOR_NAMES[1],
 
-            distance=compute_sector_distance(
+            distance_mm=compute_sector_distance(
                 image,
                 2,
                 5
@@ -412,7 +736,7 @@ def build_sector_observations(image):
 
             sector_name=SECTOR_NAMES[2],
 
-            distance=compute_sector_distance(
+            distance_mm=compute_sector_distance(
                 image,
                 5,
                 8
@@ -423,45 +747,6 @@ def build_sector_observations(image):
     )
 
     return sectors
-
-
-###############################################################################
-# ToF Observation Builder
-###############################################################################
-
-def build_observation(frame_number,
-                      timestamp,
-                      fps,
-                      image):
-
-    """
-    Generate the ToFObservation object.
-    """
-
-    sectors = build_sector_observations(
-        image
-    )
-
-    observation = ToFObservation(
-
-        sensor_id=TOF_SENSOR_ID,
-
-        sensor_name=TOF_SENSOR_NAME,
-
-        status="ONLINE",
-
-        frame_number=frame_number,
-
-        timestamp=timestamp,
-
-        fps=fps,
-
-        sectors=sectors
-
-    )
-
-    return observation
-
 
 ###############################################################################
 # Debug Logging
@@ -477,11 +762,23 @@ def log_observation(observation):
 
     print("FPS         :", observation.fps)
 
-    print("History     :", history_size())
+    print("History     :", observation.history_size)
 
     print()
 
     for sector in observation.sectors:
+
+        if sector.velocity_mmps < -STATIONARY_THRESHOLD:
+
+            state = "Approaching"
+
+        elif sector.velocity_mmps > STATIONARY_THRESHOLD:
+
+            state = "Receding"
+
+        else:
+
+            state = "Stationary"
 
         print(
 
@@ -489,28 +786,111 @@ def log_observation(observation):
 
             ":",
 
-            sector.distance,
+            sector.distance_mm,
 
-            "mm"
+            "mm",
+
+            "|",
+
+            round(
+                sector.velocity_mmps,
+                1
+            ),
+
+            "mm/s",
+
+            "|",
+
+            state
 
         )
 
     log_separator()
+
+###############################################################################
+# Dashboard Helpers
+###############################################################################
+
+def velocity_state(velocity):
+    """
+    Classify velocity for dashboard visualization.
+    """
+
+    if velocity < -STATIONARY_THRESHOLD:
+
+        return "Approaching"
+
+    elif velocity > STATIONARY_THRESHOLD:
+
+        return "Receding"
+
+    else:
+
+        return "Stationary"
 
 
 ###############################################################################
 # Dashboard Serialization
 ###############################################################################
 
+def sector_to_dict(sector):
+    """
+    Convert one SectorObservation into a JSON serializable dictionary.
+    """
+
+    return {
+
+        "sector_id": sector.sector_id,
+
+        "sector_name": sector.sector_name,
+
+        "distance_mm": sector.distance_mm,
+
+        "velocity_mmps": round(
+            sector.velocity_mmps,
+            1
+        ),
+
+        "velocity_state": velocity_state(
+            sector.velocity_mmps
+        ),
+
+        "persistence": sector.persistence
+
+    }
+
+
 def observation_to_dict(observation):
-
     """
-    Convert dataclasses into JSON serializable dictionaries.
+    Convert ToFObservation into a JSON serializable dictionary.
     """
 
-    data = asdict(observation)
+    return {
 
-    return data
+        "sensor_id": observation.sensor_id,
+
+        "sensor_name": observation.sensor_name,
+
+        "status": observation.status,
+
+        "frame_number": observation.frame_number,
+
+        "timestamp": observation.timestamp,
+
+        "fps": observation.fps,
+
+        "history_size": observation.history_size,
+
+        "sectors": [
+
+            sector_to_dict(sector)
+
+            for sector in observation.sectors
+
+        ]
+
+    }
+
 ###############################################################################
 # Observation Engine
 ###############################################################################
@@ -529,13 +909,17 @@ def publish_frame():
 
         ready = Bridge.call("sensor_ready")
 
+        print("[DEBUG] sensor_ready =", ready)
+
     except Exception as e:
 
-        print("Bridge error:", e)
+        print("[DEBUG] Bridge exception:", e)
 
         return
 
     if not ready:
+
+        print("[DEBUG] Sensor not ready")
 
         return
 
@@ -548,6 +932,7 @@ def publish_frame():
         frame_counter = Bridge.call(
             "get_frame_counter"
         )
+        print("[DEBUG] frame_counter =", frame_counter)
 
     except Exception as e:
 
@@ -597,6 +982,7 @@ def publish_frame():
     frame = Bridge.call(
         "get_frame"
     )
+    print("[DEBUG] frame length =", len(frame))
 
     ###########################################################################
     # Validate
@@ -620,28 +1006,10 @@ def publish_frame():
     )
 
     ###########################################################################
-    # Save History
+    # Observation Engine
     ###########################################################################
 
-    current_frame = ToFFrame(
-
-        frame_number=frame_counter,
-
-        timestamp=timestamp,
-
-        image=image.copy()
-
-    )
-
-    add_frame_to_history(
-        current_frame
-    )
-
-    ###########################################################################
-    # Build Observation
-    ###########################################################################
-
-    observation = build_observation(
+    observation = observation_engine.process_frame(
 
         frame_counter,
 
@@ -712,23 +1080,11 @@ def publish_frame():
         np.min(valid)
     )
 
-    message["left"] = compute_sector_distance(
-        image,
-        0,
-        3
-    )
+    message["left"] = observation.sectors[0].distance_mm
 
-    message["center"] = compute_sector_distance(
-        image,
-        3,
-        5
-    )
+    message["center"] = observation.sectors[1].distance_mm
 
-    message["right"] = compute_sector_distance(
-        image,
-        5,
-        8
-    )
+    message["right"] = observation.sectors[2].distance_mm
 
     ###########################################################################
     # Publish
@@ -756,6 +1112,7 @@ def loop():
     2. Update Observation Engine
     3. Publish observation to dashboard
     """
+    print("[DEBUG] loop")
 
     publish_frame()
 
@@ -807,6 +1164,18 @@ print("  Invalid       :", INVALID_DISTANCE_MM, "mm")
 
 print()
 
+print("Waiting for ToF sensor...")
+
+print()
+
+print("Temporal Observation Engine Enabled")
+
+print("Velocity Estimation Enabled")
+
+print("Velocity Smoothing Enabled")
+
+print()
+
 print("Waiting for sensor...")
 
 print()
@@ -825,6 +1194,6 @@ App.run(
 #
 # End of File
 #
-# SixthSense v2.0.0.1
+# SixthSense v2.1.0
 #
 ###############################################################################

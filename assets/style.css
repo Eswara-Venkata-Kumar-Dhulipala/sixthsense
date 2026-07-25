@@ -2,7 +2,7 @@
  *
  * SixthSense
  *
- * Version : 2.0.0.2
+ * Version : 2.1.0
  *
  * Dashboard Stylesheet
  *
@@ -14,57 +14,55 @@
 
 :root
 {
-    --background-color: #f5f7fb;
+    --background-color: #f4f6f8;
 
     --card-background: #ffffff;
 
-    --primary-color: #1976d2;
+    --border-color: #d0d7de;
 
-    --secondary-color: #455a64;
+    --header-background: #1f2937;
 
-    --text-color: #222222;
+    --header-text: #ffffff;
 
-    --border-color: #d9d9d9;
+    --text-primary: #1f2937;
 
-    --shadow-color: rgba(0,0,0,0.12);
+    --text-secondary: #6b7280;
 
-    --success-color: #2e7d32;
+    --shadow:
+        0 2px 8px rgba(0,0,0,0.08);
 
-    --warning-color: #ef6c00;
+    --border-radius: 10px;
 
-    --error-color: #c62828;
-
-    --font-family:
-
-        "Segoe UI",
-
-        Arial,
-
-        Helvetica,
-
-        sans-serif;
+    --spacing: 16px;
 }
 
 /******************************************************************************
- * Global
+ * Reset
  ******************************************************************************/
 
 *
-{
-    box-sizing: border-box;
-}
-
-body
 {
     margin: 0;
 
     padding: 0;
 
-    background: var(--background-color);
+    box-sizing: border-box;
+}
 
-    color: var(--text-color);
+body
+{
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
 
-    font-family: var(--font-family);
+    background:
+        var(--background-color);
+
+    color:
+        var(--text-primary);
+
+    line-height: 1.5;
 }
 
 /******************************************************************************
@@ -73,42 +71,40 @@ body
 
 #app-header
 {
-    background: var(--primary-color);
+    background:
+        var(--header-background);
 
-    color: white;
+    color:
+        var(--header-text);
 
     text-align: center;
 
     padding: 24px;
-
-    box-shadow: 0 2px 8px var(--shadow-color);
 }
 
 #app-header h1
 {
-    margin: 0;
+    font-size: 2rem;
 
-    font-size: 36px;
+    margin-bottom: 8px;
 }
 
 #app-header h2
 {
-    margin-top: 8px;
-
-    margin-bottom: 0;
-
-    font-size: 20px;
+    font-size: 1.1rem;
 
     font-weight: normal;
+
+    color: #d1d5db;
+
+    margin-bottom: 12px;
 }
 
 #version-container
 {
-    margin-top: 16px;
+    font-size: 0.9rem;
 
-    font-size: 15px;
-
-    opacity: 0.9;
+    color: #cbd5e1;
 }
 
 /******************************************************************************
@@ -117,77 +113,69 @@ body
 
 #dashboard
 {
-    max-width: 1400px;
+    display: grid;
+
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(560px, 1fr)
+        );
+
+    gap: var(--spacing);
+
+    padding: var(--spacing);
+
+    max-width: 1800px;
 
     margin: auto;
-
-    padding: 24px;
-
-    display: flex;
-
-    flex-direction: column;
-
-    gap: 24px;
 }
-
 /******************************************************************************
- * Card
+ * Cards
  ******************************************************************************/
 
 .card
 {
-    background: var(--card-background);
+    background:
+        var(--card-background);
 
-    border-radius: 12px;
+    border:
+        1px solid var(--border-color);
 
-    border: 1px solid var(--border-color);
+    border-radius:
+        var(--border-radius);
 
-    box-shadow: 0 4px 12px var(--shadow-color);
+    box-shadow:
+        var(--shadow);
 
     overflow: hidden;
 }
 
 .card-header
 {
-    background: var(--primary-color);
+    background: #f8fafc;
 
-    color: white;
+    border-bottom:
+        1px solid var(--border-color);
 
-    padding: 14px 20px;
+    padding: 14px 18px;
 }
 
 .card-header h2
 {
-    margin: 0;
+    font-size: 1.1rem;
 
-    font-size: 22px;
+    font-weight: 600;
+
+    color: var(--text-primary);
 }
 
 .card-body
 {
-    padding: 20px;
+    padding: 18px;
 }
 
 /******************************************************************************
- * Footer
- ******************************************************************************/
-
-#footer
-{
-    margin-top: 40px;
-
-    padding: 20px;
-
-    text-align: center;
-
-    background: var(--secondary-color);
-
-    color: white;
-
-    font-size: 15px;
-}
-/******************************************************************************
- * Sensor Information Table
+ * Information Tables
  ******************************************************************************/
 
 .info-table
@@ -199,20 +187,10 @@ body
 
 .info-table td
 {
-    padding: 12px 10px;
+    padding: 8px 4px;
 
-    border-bottom: 1px solid var(--border-color);
-
-    font-size: 16px;
-}
-
-.info-table td:first-child
-{
-    width: 220px;
-
-    font-weight: 600;
-
-    color: var(--secondary-color);
+    border-bottom:
+        1px solid #edf2f7;
 }
 
 .info-table tr:last-child td
@@ -220,17 +198,32 @@ body
     border-bottom: none;
 }
 
+.info-table td:first-child
+{
+    color: var(--text-secondary);
+
+    width: 45%;
+}
+
+.info-table td:last-child
+{
+    font-weight: 600;
+
+    text-align: right;
+}
+
 /******************************************************************************
- * Observation Grid
+ * Sector Grid
  ******************************************************************************/
 
 .sector-grid
 {
     display: grid;
 
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns:
+        repeat(3, 1fr);
 
-    gap: 20px;
+    gap: 16px;
 }
 
 /******************************************************************************
@@ -241,56 +234,85 @@ body
 {
     background: #fafafa;
 
-    border: 1px solid var(--border-color);
+    border:
+        1px solid var(--border-color);
 
-    border-radius: 10px;
+    border-radius: 8px;
 
-    padding: 18px;
-
-    text-align: center;
-
-    transition: all 0.25s ease;
-}
-
-.sector-card:hover
-{
-    transform: translateY(-3px);
-
-    box-shadow: 0 6px 16px var(--shadow-color);
+    padding: 14px;
 }
 
 .sector-card h3
 {
-    margin-top: 0;
+    text-align: center;
 
-    margin-bottom: 18px;
+    margin-bottom: 12px;
 
-    color: var(--primary-color);
+    font-size: 1rem;
 
-    font-size: 22px;
+    color: var(--text-primary);
 }
 
 /******************************************************************************
- * Distance Display
+ * Distance
  ******************************************************************************/
 
 .distance-value
 {
-    font-size: 38px;
+    font-size: 1.6rem;
 
     font-weight: bold;
 
-    color: var(--success-color);
-}
+    color: #2563eb;
 
-.distance-value span
-{
-    font-size: 42px;
+    text-align: center;
 }
 
 /******************************************************************************
+ * Velocity
+ ******************************************************************************/
+
+.velocity-value
+{
+    font-size: 1.2rem;
+
+    font-weight: bold;
+
+    text-align: center;
+
+    margin-top: 10px;
+}
+
+/******************************************************************************
+ * Velocity State
+ ******************************************************************************/
+
+.state-value
+{
+    font-size: 0.95rem;
+
+    font-weight: 600;
+
+    text-align: center;
+
+    margin-top: 8px;
+
+    padding: 4px 10px;
+
+    border-radius: 20px;
+
+    display: inline-block;
+
+    width: 100%;
+}
+/******************************************************************************
  * Heatmap
  ******************************************************************************/
+
+#heatmap-card
+{
+    grid-column: span 2;
+}
 
 #tof-canvas
 {
@@ -298,24 +320,31 @@ body
 
     margin: auto;
 
-    border: 2px solid var(--border-color);
+    border: 1px solid var(--border-color);
 
     border-radius: 8px;
 
-    background: white;
+    background: #ffffff;
 
     max-width: 100%;
+
+    height: auto;
 }
 
 /******************************************************************************
  * JSON Viewer
  ******************************************************************************/
 
+#json-card
+{
+    grid-column: span 2;
+}
+
 #observation-json
 {
-    background: #1e1e1e;
+    background: #1f2937;
 
-    color: #00ff66;
+    color: #e5e7eb;
 
     padding: 16px;
 
@@ -323,118 +352,350 @@ body
 
     overflow-x: auto;
 
-    font-family: Consolas, monospace;
+    overflow-y: auto;
 
-    font-size: 14px;
+    max-height: 320px;
+
+    font-family:
+        Consolas,
+        "Courier New",
+        monospace;
+
+    font-size: 0.9rem;
 
     line-height: 1.5;
 
     white-space: pre-wrap;
 
-    min-height: 250px;
+    word-break: break-word;
 }
 
 /******************************************************************************
- * Status Values
+ * System Status
  ******************************************************************************/
 
-#sensor-status,
-
-#bridge-status,
-
-#browser-status,
-
-#tof-status
+#system-card
 {
-    font-weight: bold;
+    min-height: 260px;
 }
 
 /******************************************************************************
- * Status Classes
+ * Debug Information
+ ******************************************************************************/
+
+#debug-card
+{
+    min-height: 260px;
+}
+
+/******************************************************************************
+ * Card Titles
+ ******************************************************************************/
+
+.card h2
+{
+    user-select: none;
+}
+
+/******************************************************************************
+ * Canvas Container
+ ******************************************************************************/
+
+#heatmap-card .card-body
+{
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+}
+
+/******************************************************************************
+ * Debug Tables
+ ******************************************************************************/
+
+#system-card .info-table td:first-child,
+#debug-card .info-table td:first-child
+{
+    font-weight: 500;
+}
+
+#system-card .info-table td:last-child,
+#debug-card .info-table td:last-child
+{
+    font-family:
+        Consolas,
+        "Courier New",
+        monospace;
+}
+
+/******************************************************************************
+ * JSON Scrollbar
+ ******************************************************************************/
+
+#observation-json::-webkit-scrollbar
+{
+    width: 8px;
+
+    height: 8px;
+}
+
+#observation-json::-webkit-scrollbar-thumb
+{
+    background: #6b7280;
+
+    border-radius: 4px;
+}
+
+#observation-json::-webkit-scrollbar-track
+{
+    background: #374151;
+}
+
+/******************************************************************************
+ * Prevent Text Selection
+ ******************************************************************************/
+
+.card-header,
+.sector-card h3
+{
+    user-select: none;
+}
+/******************************************************************************
+ * Status Indicators
  ******************************************************************************/
 
 .status-online
 {
-    color: var(--success-color);
-}
+    color: #15803d;
 
-.status-warning
-{
-    color: var(--warning-color);
+    font-weight: 600;
 }
 
 .status-offline
 {
-    color: var(--error-color);
+    color: #dc2626;
+
+    font-weight: 600;
+}
+
+.status-warning
+{
+    color: #d97706;
+
+    font-weight: 600;
+}
+
+.status-danger
+{
+    color: #b91c1c;
+
+    font-weight: 600;
 }
 
 /******************************************************************************
- * Placeholder
+ * Velocity State Badges
  ******************************************************************************/
 
-.placeholder
+.state-value.status-online
 {
-    text-align: center;
+    background: #dcfce7;
 
-    color: var(--secondary-color);
+    color: #15803d;
 
-    font-size: 18px;
-
-    font-style: italic;
-
-    padding: 30px;
+    border: 1px solid #86efac;
 }
+
+.state-value.status-warning
+{
+    background: #fef3c7;
+
+    color: #b45309;
+
+    border: 1px solid #fcd34d;
+}
+
+.state-value.status-danger
+{
+    background: #fee2e2;
+
+    color: #b91c1c;
+
+    border: 1px solid #fca5a5;
+}
+
 /******************************************************************************
- * Debug Card
+ * Sensor Status
  ******************************************************************************/
 
-#debug-card table td
+#sensor-status,
+#bridge-status,
+#browser-status,
+#tof-status
 {
-    font-size: 15px;
+    font-weight: 700;
 }
 
 /******************************************************************************
- * Responsive Design
+ * Numeric Values
+ ******************************************************************************/
+
+#sensor-frame,
+#sensor-timestamp,
+#sensor-fps,
+#history-size,
+#history-capacity,
+#message-count
+{
+    font-family:
+        Consolas,
+        "Courier New",
+        monospace;
+
+    font-weight: 600;
+}
+
+/******************************************************************************
+ * Observation Values
+ ******************************************************************************/
+
+.distance-value,
+.velocity-value
+{
+    font-family:
+        Consolas,
+        "Courier New",
+        monospace;
+
+    letter-spacing: 0.4px;
+}
+
+/******************************************************************************
+ * Observation Table
+ ******************************************************************************/
+
+.sector-card .info-table td
+{
+    padding: 10px 6px;
+}
+
+.sector-card .info-table td:first-child
+{
+    color: var(--text-secondary);
+
+    width: 45%;
+}
+
+.sector-card .info-table td:last-child
+{
+    text-align: right;
+}
+
+/******************************************************************************
+ * Observation Card Highlight
+ ******************************************************************************/
+
+#observation-card
+{
+    border-width: 2px;
+}
+
+/******************************************************************************
+ * Smooth Dashboard Updates
+ ******************************************************************************/
+
+.distance-value,
+.velocity-value,
+.state-value
+{
+    transition:
+        color 0.15s ease,
+        background-color 0.15s ease,
+        border-color 0.15s ease;
+}
+/******************************************************************************
+ * Footer
+ ******************************************************************************/
+
+#footer
+{
+    margin-top: 24px;
+
+    padding: 18px;
+
+    background: var(--header-background);
+
+    color: var(--header-text);
+
+    display: flex;
+
+    justify-content: center;
+
+    gap: 48px;
+
+    flex-wrap: wrap;
+
+    font-size: 0.9rem;
+}
+
+/******************************************************************************
+ * Responsive Layout
  ******************************************************************************/
 
 @media (max-width: 1200px)
 {
-    .sector-grid
-    {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-
-@media (max-width: 768px)
-{
     #dashboard
     {
-        padding: 16px;
+        grid-template-columns: 1fr;
     }
 
-    #app-header h1
+    #heatmap-card
     {
-        font-size: 30px;
+        grid-column: span 1;
     }
 
-    #app-header h2
+    #json-card
     {
-        font-size: 18px;
+        grid-column: span 1;
     }
 
     .sector-grid
     {
         grid-template-columns: 1fr;
     }
+}
 
-    .distance-value
+/******************************************************************************
+ * Mobile Layout
+ ******************************************************************************/
+
+@media (max-width: 768px)
+{
+    #app-header
     {
-        font-size: 30px;
+        padding: 18px;
     }
 
-    .distance-value span
+    #app-header h1
     {
-        font-size: 34px;
+        font-size: 1.6rem;
+    }
+
+    #app-header h2
+    {
+        font-size: 1rem;
+    }
+
+    #dashboard
+    {
+        padding: 12px;
+
+        gap: 12px;
+    }
+
+    .card-body
+    {
+        padding: 14px;
     }
 
     .info-table td
@@ -443,165 +704,60 @@ body
 
         width: 100%;
 
-        padding: 8px;
+        text-align: left;
     }
 
-    .info-table td:first-child
+    .info-table td:last-child
     {
-        font-weight: bold;
+        text-align: left;
 
-        background: #f3f3f3;
-    }
-}
-
-/******************************************************************************
- * Scrollbars
- ******************************************************************************/
-
-::-webkit-scrollbar
-{
-    width: 10px;
-
-    height: 10px;
-}
-
-::-webkit-scrollbar-track
-{
-    background: #ececec;
-}
-
-::-webkit-scrollbar-thumb
-{
-    background: #999;
-
-    border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb:hover
-{
-    background: #666;
-}
-
-/******************************************************************************
- * Utility Classes
- ******************************************************************************/
-
-.hidden
-{
-    display: none !important;
-}
-
-.center
-{
-    text-align: center;
-}
-
-.right
-{
-    text-align: right;
-}
-
-.left
-{
-    text-align: left;
-}
-
-.bold
-{
-    font-weight: bold;
-}
-
-.text-success
-{
-    color: var(--success-color);
-}
-
-.text-warning
-{
-    color: var(--warning-color);
-}
-
-.text-error
-{
-    color: var(--error-color);
-}
-
-/******************************************************************************
- * Card Animation
- ******************************************************************************/
-
-.card
-{
-    animation: fadeIn 0.25s ease-in-out;
-}
-
-@keyframes fadeIn
-{
-    from
-    {
-        opacity: 0;
-
-        transform: translateY(8px);
+        margin-bottom: 10px;
     }
 
-    to
+    #tof-canvas
     {
-        opacity: 1;
+        width: 100%;
 
-        transform: translateY(0);
-    }
-}
-
-/******************************************************************************
- * Canvas Helpers
- ******************************************************************************/
-
-canvas
-{
-    image-rendering: pixelated;
-}
-
-/******************************************************************************
- * Footer Improvements
- ******************************************************************************/
-
-#footer div
-{
-    margin: 4px;
-}
-
-/******************************************************************************
- * Print Mode
- ******************************************************************************/
-
-@media print
-{
-    body
-    {
-        background: white;
-    }
-
-    .card
-    {
-        box-shadow: none;
-
-        border: 1px solid #888;
+        height: auto;
     }
 
     #footer
     {
-        background: white;
+        flex-direction: column;
 
-        color: black;
+        gap: 10px;
+
+        text-align: center;
     }
 }
 
 /******************************************************************************
- *
+ * Focus Styles
+ ******************************************************************************/
+
+button:focus,
+canvas:focus,
+span:focus
+{
+    outline: none;
+}
+
+/******************************************************************************
+ * Selection
+ ******************************************************************************/
+
+::selection
+{
+    background: #2563eb;
+
+    color: white;
+}
+
+/******************************************************************************
  * End of File
  *
- * SixthSense Dashboard
+ * SixthSense
  *
- * Version : 2.0.0.2
+ * Version : 2.1.0
  *
  ******************************************************************************/

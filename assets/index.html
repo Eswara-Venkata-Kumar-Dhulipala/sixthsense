@@ -40,7 +40,7 @@
 
         <h2>
 
-            ToF Observation Engine
+            Temporal ToF Observation Engine
 
         </h2>
 
@@ -56,7 +56,7 @@
 
             <span id="application-version">
 
-                v2.0.0.2
+                v2.1.0
 
             </span>
 
@@ -71,7 +71,7 @@
     <main id="dashboard">
 
         <!-- ====================================================== -->
-        <!-- Sensor Information Card                               -->
+        <!-- Sensor Information                                     -->
         <!-- ====================================================== -->
 
         <section
@@ -195,9 +195,8 @@
             </div>
 
         </section>
-
-        <!-- ====================================================== -->
-        <!-- Observation Card                                       -->
+                <!-- ====================================================== -->
+        <!-- ToF Observation                                        -->
         <!-- ====================================================== -->
 
         <section
@@ -218,6 +217,10 @@
 
                 <div class="sector-grid">
 
+                    <!-- ========================================== -->
+                    <!-- Sector 0                                   -->
+                    <!-- ========================================== -->
+
                     <div
                         class="sector-card"
                         id="sector0-card">
@@ -228,19 +231,70 @@
 
                         </h3>
 
-                        <div class="distance-value">
+                        <table class="info-table">
 
-                            <span id="sector0-distance">
+                            <tr>
 
-                                --
+                                <td>Distance</td>
 
-                            </span>
+                                <td>
 
-                            mm
+                                    <span id="sector0-distance"
+                                    class="distance-value">
 
-                        </div>
+                                        --
+
+                                    </span>
+
+                                    mm
+
+                                </td>
+
+                            </tr>
+
+                            <tr>
+
+                                <td>Velocity</td>
+
+                                <td>
+
+                                    <span id="sector0-velocity"
+                                    class="velocity-value">
+
+                                        --
+
+                                    </span>
+
+                                    mm/s
+
+                                </td>
+
+                            </tr>
+
+                            <tr>
+
+                                <td>State</td>
+
+                                <td style="text-align:right">
+
+                                    <span id="sector0-state"
+                                    class="state-value">
+
+                                        --
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+                        </table>
 
                     </div>
+
+                    <!-- ========================================== -->
+                    <!-- Sector 1                                   -->
+                    <!-- ========================================== -->
 
                     <div
                         class="sector-card"
@@ -252,19 +306,70 @@
 
                         </h3>
 
-                        <div class="distance-value">
+                        <table class="info-table">
 
-                            <span id="sector1-distance">
+                            <tr>
 
-                                --
+                                <td>Distance</td>
 
-                            </span>
+                                <td>
 
-                            mm
+                                    <span id="sector1-distance"
+                                    class="distance-value">
 
-                        </div>
+                                        --
+
+                                    </span>
+
+                                    mm
+
+                                </td>
+
+                            </tr>
+
+                            <tr>
+
+                                <td>Velocity</td>
+
+                                <td>
+
+                                    <span id="sector1-velocity"
+                                    class="velocity-value">
+
+                                        --
+
+                                    </span>
+
+                                    mm/s
+
+                                </td>
+
+                            </tr>
+
+                            <tr>
+
+                                <td>State</td>
+
+                                <td style="text-align:right">
+
+                                    <span id="sector1-state"
+                                    class="state-value">
+
+                                        --
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+                        </table>
 
                     </div>
+
+                    <!-- ========================================== -->
+                    <!-- Sector 2                                   -->
+                    <!-- ========================================== -->
 
                     <div
                         class="sector-card"
@@ -276,17 +381,64 @@
 
                         </h3>
 
-                        <div class="distance-value">
+                        <table class="info-table">
 
-                            <span id="sector2-distance">
+                            <tr>
 
-                                --
+                                <td>Distance</td>
 
-                            </span>
+                                <td>
 
-                            mm
+                                    <span id="sector2-distance"
+                                    class="distance-value">
 
-                        </div>
+                                        --
+
+                                    </span>
+
+                                    mm
+
+                                </td>
+
+                            </tr>
+
+                            <tr>
+
+                                <td>Velocity</td>
+
+                                <td>
+
+                                    <span id="sector2-velocity"
+                                    class="velocity-value">
+
+                                        --
+
+                                    </span>
+
+                                    mm/s
+
+                                </td>
+
+                            </tr>
+
+                            <tr>
+
+                                <td>State</td>
+
+                                <td style="text-align:right">
+
+                                    <span id="sector2-state"
+                                    class="state-value">
+
+                                        --
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+                        </table>
 
                     </div>
 
@@ -295,8 +447,9 @@
             </div>
 
         </section>
-                <!-- ====================================================== -->
-        <!-- Heatmap Card                                           -->
+
+        <!-- ====================================================== -->
+        <!-- Heatmap                                                -->
         <!-- ====================================================== -->
 
         <section
@@ -317,17 +470,16 @@
 
                 <canvas
                     id="tof-canvas"
-                    width="480"
-                    height="480">
+                    width="512"
+                    height="512">
 
                 </canvas>
 
             </div>
 
         </section>
-
-        <!-- ====================================================== -->
-        <!-- Observation JSON Card                                 -->
+                <!-- ====================================================== -->
+        <!-- Observation JSON                                       -->
         <!-- ====================================================== -->
 
         <section
@@ -357,7 +509,7 @@ Waiting for observations...
         </section>
 
         <!-- ====================================================== -->
-        <!-- System Status Card                                     -->
+        <!-- System Status                                          -->
         <!-- ====================================================== -->
 
         <section
@@ -390,7 +542,7 @@ Waiting for observations...
 
                             <span id="bridge-status">
 
-                                DISCONNECTED
+                                WAITING
 
                             </span>
 
@@ -442,7 +594,7 @@ Waiting for observations...
 
                         <td>
 
-                            History Buffer
+                            Observation History
 
                         </td>
 
@@ -473,96 +625,7 @@ Waiting for observations...
         </section>
 
         <!-- ====================================================== -->
-        <!-- Future Camera Placeholder                              -->
-        <!-- ====================================================== -->
-
-        <section
-            class="card"
-            id="camera-card">
-
-            <div class="card-header">
-
-                <h2>
-
-                    Camera Observation
-
-                </h2>
-
-            </div>
-
-            <div class="card-body">
-
-                <div class="placeholder">
-
-                    Coming in Version 3.0.0
-
-                </div>
-
-            </div>
-
-        </section>
-
-        <!-- ====================================================== -->
-        <!-- Future Context Placeholder                             -->
-        <!-- ====================================================== -->
-
-        <section
-            class="card"
-            id="context-card">
-
-            <div class="card-header">
-
-                <h2>
-
-                    Context Engine
-
-                </h2>
-
-            </div>
-
-            <div class="card-body">
-
-                <div class="placeholder">
-
-                    Coming in Version 4.0.0
-
-                </div>
-
-            </div>
-
-        </section>
-
-        <!-- ====================================================== -->
-        <!-- Future Output Placeholder                              -->
-        <!-- ====================================================== -->
-
-        <section
-            class="card"
-            id="output-card">
-
-            <div class="card-header">
-
-                <h2>
-
-                    Output Manager
-
-                </h2>
-
-            </div>
-
-            <div class="card-body">
-
-                <div class="placeholder">
-
-                    Coming in Version 5.0.0
-
-                </div>
-
-            </div>
-
-        </section>
-                <!-- ====================================================== -->
-        <!-- Debug Card                                              -->
+        <!-- Debug Information                                      -->
         <!-- ====================================================== -->
 
         <section
@@ -595,7 +658,7 @@ Waiting for observations...
 
                             <span id="dashboard-version">
 
-                                v2.0.0.2
+                                v2.1.0
 
                             </span>
 
@@ -643,12 +706,28 @@ Waiting for observations...
 
                     </tr>
 
+                    <tr>
+
+                        <td>
+
+                            Observation Engine
+
+                        </td>
+
+                        <td>
+
+                            Temporal ToF
+
+                        </td>
+
+                    </tr>
+
                 </table>
 
             </div>
 
         </section>
-
+    
     </main>
 
     <!-- ========================================================== -->
@@ -671,7 +750,7 @@ Waiting for observations...
 
         <div>
 
-            ToF Observation Engine
+            Temporal ToF Observation Engine
 
         </div>
 
