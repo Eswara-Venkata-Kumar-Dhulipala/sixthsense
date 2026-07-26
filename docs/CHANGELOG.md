@@ -1,166 +1,153 @@
-# SixthSense
+# Changelog
 
-## Changelog
+All notable changes to this project will be documented in this file.
 
-This document records the history of every software release.
+The format is inspired by **Keep a Changelog**, and the project follows **Semantic Versioning**.
 
 ---
 
-# v2.0.0
+# [2.1.0] - 2026-07-26
 
-Status
+## Overview
 
-🚧 In Development
+Version **2.1.0** introduces the **Temporal ToF Observation Engine**, extending the static observation capabilities introduced in v2.0.0.
+
+The Observation Engine now maintains temporal observation history, estimates relative obstacle velocity, classifies motion states, and provides enhanced visualization through an improved real-time dashboard.
+
+This release establishes the foundation for future Context, Attention, and Feedback Engines while preserving the modular Observation-First Architecture.
 
 ---
 
 ## Added
 
-### Architecture
-
-- Layered software architecture
-- Configuration Module
-- Versioning strategy
-- Documentation standards
-- Software Design Document
-
 ### Observation Engine
 
-- ToF Observation Engine framework
-- Rolling history buffer
-- Three-sector architecture
-- ToFObservation data model
+- Temporal observation history.
+- Relative velocity estimation.
+- Motion state classification.
+- Velocity smoothing.
+- Enhanced `ToFObservation` data model.
+- Observation history management.
+- Temporal processing pipeline.
 
 ### Dashboard
 
-- Sensor Information panel
-- ToF Observation panel
-- Heatmap panel
-- Observation JSON panel
+- Three-sector observation cards.
+- Live velocity visualization.
+- Motion state indicators.
+- Enhanced JSON observation viewer.
+- Improved dashboard layout.
+- Improved responsive UI.
 
-### Repository
+### Documentation
 
-- Standard folder structure
-- Documentation folder
-- README
-- CHANGELOG
+- Redesigned project README.
+- New **Software Architecture & Design Document** (`SixthSense_v2.1.0.md`).
+- Updated project documentation structure.
+- Expanded architectural documentation.
+- Updated release documentation.
 
 ---
 
 ## Changed
 
-- Project reorganized into layered architecture.
-- Observation-first development strategy adopted.
-- Sensor-independent sector naming (`Sector 0`, `Sector 1`, `Sector 2`) introduced.
+### Observation Engine
+
+- Extended the static Observation Engine introduced in v2.0.0.
+- Refactored observation generation pipeline.
+- Improved software modularity.
+- Improved processing pipeline readability.
+- Improved separation between perception and future reasoning layers.
+
+### Dashboard
+
+- Redesigned dashboard layout.
+- Improved sector visualization.
+- Improved sensor status display.
+- Improved observation rendering.
+- Improved real-time updates.
+
+### Software Architecture
+
+- Reinforced Observation-First Architecture.
+- Standardized observation interfaces.
+- Improved processing pipeline organization.
+- Improved scalability for future multi-sensor support.
 
 ---
 
 ## Fixed
 
-- Standardized software responsibilities between:
-  - `sketch.ino`
-  - `main.py`
-  - `app.js`
+- Fixed WebUI Socket.IO event handling.
+- Fixed browser initialization issues.
+- Fixed dashboard rendering inconsistencies.
+- Fixed observation serialization issues.
+- Fixed sector visualization alignment.
+- Fixed UI responsiveness.
+- Fixed sensor initialization handling.
+- Fixed application startup issues.
+- Fixed observation update synchronization.
 
 ---
 
-# Planned Releases
+## Performance
 
-## v2.1.0
-
-Velocity Engine
-
-Planned
-
-- Distance history
-- Velocity estimation
-- Velocity dashboard
+- Reduced observation processing overhead.
+- Improved dashboard refresh performance.
+- Improved velocity estimation stability.
+- Optimized temporal processing.
+- Improved real-time responsiveness.
 
 ---
 
-## v2.2.0
+## Compatibility
 
-Motion Engine
+### Hardware
 
-Planned
+- Arduino UNO Q
+- SparkFun VL53L5CX Time-of-Flight Sensor
 
-- Static detection
-- Approaching detection
-- Moving away detection
+### Software
 
----
-
-## v2.3.0
-
-Persistence Engine
-
-Planned
-
-- Persistence counter
-- Stable obstacle filtering
+- Arduino App Lab
+- Python Backend
+- Web Dashboard
 
 ---
 
-## v2.4.0
+## Known Limitations
 
-Confidence Engine
+Current release supports:
 
-Planned
+- One Time-of-Flight sensor.
+- Relative motion estimation only.
+- Observation generation.
+- Dashboard visualization.
 
-- Confidence estimation
-- Sensor stability
-- Noise rejection
+Current release does not yet provide:
 
----
+- Multi-sensor perception.
+- Context generation.
+- Attention modelling.
+- Navigation planning.
+- Haptic feedback.
+- Audio feedback.
 
-## v3.0.0
-
-Camera Observation Engine
-
-Planned
-
-- Object detection
-- CameraObservation
-- Bounding boxes
-- Camera sectors
-- Motion estimation
+These capabilities are planned for future releases.
 
 ---
 
-## v4.0.0
+# [2.0.0] - 2026-07-01
 
-Context Engine
+## Initial Release
 
-Planned
+### Added
 
-- Observation fusion
-- Attention prioritization
-- Global sector mapping
-- AttentionEvent generation
-
----
-
-## v5.0.0
-
-Output Manager
-
-Planned
-
-- Haptic feedback
-- Speech synthesis
-- Spatial audio
-- User notification engine
-
----
-
-# Long-Term Goal
-
-Final SixthSense system
-
-- 6 × VL53L5CX ToF sensors
-- 2 × USB cameras
-- 4 × vibration motors
-- Stereo earbuds
-- Observation-driven architecture
-- Context-aware attention engine
-- Near 360° situational awareness
+- Static ToF Observation Engine.
+- Three-sector obstacle observation.
+- Live Time-of-Flight heatmap.
+- Interactive web dashboard.
+- JSON observation output.
+- Modular Observation-First software architecture.
+- Arduino UNO Q integration.
+- SparkFun VL53L5CX integration.
