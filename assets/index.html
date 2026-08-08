@@ -11,68 +11,63 @@
         content="width=device-width, initial-scale=1.0">
 
     <title>
-
         SixthSense
-
     </title>
 
     <link
         rel="stylesheet"
         href="style.css">
 
-    <script src="libs/socket.io.min.js"></script>
+    <script
+        src="libs/socket.io.min.js">
+    </script>
 
 </head>
 
+
 <body>
 
-    <!-- ========================================================== -->
-    <!-- Header                                                     -->
-    <!-- ========================================================== -->
+    <!-- ================================================================ -->
+    <!-- Header                                                           -->
+    <!-- ================================================================ -->
 
     <header id="app-header">
 
         <h1>
-
             SixthSense
-
         </h1>
 
         <h2>
-
-            Temporal ToF Observation Engine
-
+            Temporal ToF Observation + Confidence Engine
         </h2>
 
         <div id="version-container">
 
             <span id="application-name">
-
                 SixthSense
-
             </span>
 
             |
 
             <span id="application-version">
-
-                v2.1.0
-
+                v2.2.1
             </span>
 
         </div>
 
     </header>
 
-    <!-- ========================================================== -->
-    <!-- Main Container                                             -->
-    <!-- ========================================================== -->
+
+    <!-- ================================================================ -->
+    <!-- Dashboard                                                        -->
+    <!-- ================================================================ -->
 
     <main id="dashboard">
 
-        <!-- ====================================================== -->
-        <!-- Sensor Information                                     -->
-        <!-- ====================================================== -->
+
+        <!-- ============================================================ -->
+        <!-- Sensor Information                                           -->
+        <!-- ============================================================ -->
 
         <section
             class="card"
@@ -81,12 +76,11 @@
             <div class="card-header">
 
                 <h2>
-
                     Sensor Information
-
                 </h2>
 
             </div>
+
 
             <div class="card-body">
 
@@ -94,78 +88,82 @@
 
                     <tr>
 
-                        <td>Sensor ID</td>
+                        <td>
+                            Sensor ID
+                        </td>
 
                         <td>
 
                             <span id="sensor-id">
-
                                 --
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
-                        <td>Sensor Name</td>
+                        <td>
+                            Sensor Name
+                        </td>
 
                         <td>
 
                             <span id="sensor-name">
-
                                 --
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
-                        <td>Status</td>
+                        <td>
+                            Status
+                        </td>
 
                         <td>
 
                             <span id="sensor-status">
-
                                 OFFLINE
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
-                        <td>Frame</td>
+                        <td>
+                            Frame
+                        </td>
 
                         <td>
 
                             <span id="sensor-frame">
-
                                 0
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
-                        <td>Timestamp</td>
+                        <td>
+                            Timestamp
+                        </td>
 
                         <td>
 
                             <span id="sensor-timestamp">
-
                                 0
-
                             </span>
 
                             ms
@@ -174,16 +172,17 @@
 
                     </tr>
 
+
                     <tr>
 
-                        <td>FPS</td>
+                        <td>
+                            FPS
+                        </td>
 
                         <td>
 
                             <span id="sensor-fps">
-
-                                0
-
+                                0.0
                             </span>
 
                         </td>
@@ -195,9 +194,11 @@
             </div>
 
         </section>
-                <!-- ====================================================== -->
-        <!-- ToF Observation                                        -->
-        <!-- ====================================================== -->
+
+
+        <!-- ============================================================ -->
+        <!-- ToF Observation                                               -->
+        <!-- ============================================================ -->
 
         <section
             class="card"
@@ -206,41 +207,45 @@
             <div class="card-header">
 
                 <h2>
-
                     ToF Observation
-
                 </h2>
 
             </div>
+
 
             <div class="card-body">
 
                 <div class="sector-grid">
 
-                    <!-- ========================================== -->
-                    <!-- Sector 0                                   -->
-                    <!-- ========================================== -->
+
+                    <!-- ================================================= -->
+                    <!-- Sector 0                                          -->
+                    <!-- ================================================= -->
 
                     <div
                         class="sector-card"
                         id="sector0-card">
 
                         <h3>
-
                             Sector 0
-
                         </h3>
 
-                        <table class="info-table">
+
+                        <table
+                            class="info-table sector-table">
+
 
                             <tr>
 
-                                <td>Distance</td>
+                                <td>
+                                    Distance
+                                </td>
 
                                 <td>
 
-                                    <span id="sector0-distance"
-                                    class="distance-value">
+                                    <span
+                                        id="sector0-distance"
+                                        class="distance-value">
 
                                         --
 
@@ -252,14 +257,70 @@
 
                             </tr>
 
+
                             <tr>
 
-                                <td>Velocity</td>
+                                <td>
+                                    Confidence
+                                </td>
 
                                 <td>
 
-                                    <span id="sector0-velocity"
-                                    class="velocity-value">
+                                    <span
+                                        id="sector0-confidence"
+                                        class="confidence-value">
+
+                                        0.0
+
+                                    </span>
+
+                                    %
+
+                                    <span
+                                        id="sector0-confidence-level"
+                                        class="confidence-level confidence-invalid">
+
+                                        INVALID
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+
+                            <tr>
+
+                                <td>
+                                    Zone
+                                </td>
+
+                                <td>
+
+                                    <span
+                                        id="sector0-zone"
+                                        class="zone-value">
+
+                                        --
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+
+                            <tr>
+
+                                <td>
+                                    Velocity
+                                </td>
+
+                                <td>
+
+                                    <span
+                                        id="sector0-velocity"
+                                        class="velocity-value">
 
                                         --
 
@@ -271,14 +332,18 @@
 
                             </tr>
 
+
                             <tr>
 
-                                <td>State</td>
+                                <td>
+                                    State
+                                </td>
 
-                                <td style="text-align:right">
+                                <td>
 
-                                    <span id="sector0-state"
-                                    class="state-value">
+                                    <span
+                                        id="sector0-state"
+                                        class="state-value">
 
                                         --
 
@@ -288,34 +353,40 @@
 
                             </tr>
 
+
                         </table>
 
                     </div>
 
-                    <!-- ========================================== -->
-                    <!-- Sector 1                                   -->
-                    <!-- ========================================== -->
+
+                    <!-- ================================================= -->
+                    <!-- Sector 1                                          -->
+                    <!-- ================================================= -->
 
                     <div
                         class="sector-card"
                         id="sector1-card">
 
                         <h3>
-
                             Sector 1
-
                         </h3>
 
-                        <table class="info-table">
+
+                        <table
+                            class="info-table sector-table">
+
 
                             <tr>
 
-                                <td>Distance</td>
+                                <td>
+                                    Distance
+                                </td>
 
                                 <td>
 
-                                    <span id="sector1-distance"
-                                    class="distance-value">
+                                    <span
+                                        id="sector1-distance"
+                                        class="distance-value">
 
                                         --
 
@@ -327,14 +398,70 @@
 
                             </tr>
 
+
                             <tr>
 
-                                <td>Velocity</td>
+                                <td>
+                                    Confidence
+                                </td>
 
                                 <td>
 
-                                    <span id="sector1-velocity"
-                                    class="velocity-value">
+                                    <span
+                                        id="sector1-confidence"
+                                        class="confidence-value">
+
+                                        0.0
+
+                                    </span>
+
+                                    %
+
+                                    <span
+                                        id="sector1-confidence-level"
+                                        class="confidence-level confidence-invalid">
+
+                                        INVALID
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+
+                            <tr>
+
+                                <td>
+                                    Zone
+                                </td>
+
+                                <td>
+
+                                    <span
+                                        id="sector1-zone"
+                                        class="zone-value">
+
+                                        --
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+
+                            <tr>
+
+                                <td>
+                                    Velocity
+                                </td>
+
+                                <td>
+
+                                    <span
+                                        id="sector1-velocity"
+                                        class="velocity-value">
 
                                         --
 
@@ -346,14 +473,18 @@
 
                             </tr>
 
+
                             <tr>
 
-                                <td>State</td>
+                                <td>
+                                    State
+                                </td>
 
-                                <td style="text-align:right">
+                                <td>
 
-                                    <span id="sector1-state"
-                                    class="state-value">
+                                    <span
+                                        id="sector1-state"
+                                        class="state-value">
 
                                         --
 
@@ -363,34 +494,40 @@
 
                             </tr>
 
+
                         </table>
 
                     </div>
 
-                    <!-- ========================================== -->
-                    <!-- Sector 2                                   -->
-                    <!-- ========================================== -->
+
+                    <!-- ================================================= -->
+                    <!-- Sector 2                                          -->
+                    <!-- ================================================= -->
 
                     <div
                         class="sector-card"
                         id="sector2-card">
 
                         <h3>
-
                             Sector 2
-
                         </h3>
 
-                        <table class="info-table">
+
+                        <table
+                            class="info-table sector-table">
+
 
                             <tr>
 
-                                <td>Distance</td>
+                                <td>
+                                    Distance
+                                </td>
 
                                 <td>
 
-                                    <span id="sector2-distance"
-                                    class="distance-value">
+                                    <span
+                                        id="sector2-distance"
+                                        class="distance-value">
 
                                         --
 
@@ -402,14 +539,70 @@
 
                             </tr>
 
+
                             <tr>
 
-                                <td>Velocity</td>
+                                <td>
+                                    Confidence
+                                </td>
 
                                 <td>
 
-                                    <span id="sector2-velocity"
-                                    class="velocity-value">
+                                    <span
+                                        id="sector2-confidence"
+                                        class="confidence-value">
+
+                                        0.0
+
+                                    </span>
+
+                                    %
+
+                                    <span
+                                        id="sector2-confidence-level"
+                                        class="confidence-level confidence-invalid">
+
+                                        INVALID
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+
+                            <tr>
+
+                                <td>
+                                    Zone
+                                </td>
+
+                                <td>
+
+                                    <span
+                                        id="sector2-zone"
+                                        class="zone-value">
+
+                                        --
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+
+                            <tr>
+
+                                <td>
+                                    Velocity
+                                </td>
+
+                                <td>
+
+                                    <span
+                                        id="sector2-velocity"
+                                        class="velocity-value">
 
                                         --
 
@@ -421,14 +614,18 @@
 
                             </tr>
 
+
                             <tr>
 
-                                <td>State</td>
+                                <td>
+                                    State
+                                </td>
 
-                                <td style="text-align:right">
+                                <td>
 
-                                    <span id="sector2-state"
-                                    class="state-value">
+                                    <span
+                                        id="sector2-state"
+                                        class="state-value">
 
                                         --
 
@@ -438,9 +635,11 @@
 
                             </tr>
 
+
                         </table>
 
                     </div>
+
 
                 </div>
 
@@ -448,69 +647,139 @@
 
         </section>
 
-        <!-- ====================================================== -->
-        <!-- Heatmap                                                -->
-        <!-- ====================================================== -->
+
+        <!-- ============================================================ -->
+        <!-- Heatmaps                                                     -->
+        <!-- ============================================================ -->
 
         <section
-            class="card"
+            class="card full-width"
             id="heatmap-card">
 
             <div class="card-header">
 
                 <h2>
-
-                    ToF Heatmap
-
+                    ToF Heatmaps
                 </h2>
 
             </div>
 
+
             <div class="card-body">
 
-                <canvas
-                    id="tof-canvas"
-                    width="512"
-                    height="512">
+                <div class="heatmap-grid">
 
-                </canvas>
+
+                    <!-- ================================================= -->
+                    <!-- Distance Heatmap                                   -->
+                    <!-- ================================================= -->
+
+                    <div class="heatmap-panel">
+
+                        <h3>
+                            Distance
+                        </h3>
+
+                        <canvas
+                            id="tof-canvas"
+                            width="512"
+                            height="512">
+
+                        </canvas>
+
+
+                        <div
+                            class="heatmap-legend distance-legend">
+
+                            <span>
+                                Near
+                            </span>
+
+                            <div class="legend-bar">
+                            </div>
+
+                            <span>
+                                Far
+                            </span>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- ================================================= -->
+                    <!-- Confidence Heatmap                                 -->
+                    <!-- ================================================= -->
+
+                    <div class="heatmap-panel">
+
+                        <h3>
+                            Confidence
+                        </h3>
+
+                        <canvas
+                            id="confidence-canvas"
+                            width="512"
+                            height="512">
+
+                        </canvas>
+
+
+                        <div
+                            class="heatmap-legend confidence-legend">
+
+                            <span>
+                                Low
+                            </span>
+
+                            <div class="legend-bar">
+                            </div>
+
+                            <span>
+                                High
+                            </span>
+
+                        </div>
+
+                    </div>
+
+
+                </div>
 
             </div>
 
         </section>
-                <!-- ====================================================== -->
-        <!-- Observation JSON                                       -->
-        <!-- ====================================================== -->
+
+
+        <!-- ============================================================ -->
+        <!-- Observation JSON                                             -->
+        <!-- ============================================================ -->
 
         <section
-            class="card"
+            class="card full-width"
             id="json-card">
 
             <div class="card-header">
 
                 <h2>
-
                     ToF Observation (JSON)
-
                 </h2>
 
             </div>
 
+
             <div class="card-body">
 
-                <pre id="observation-json">
-
-Waiting for observations...
-
-                </pre>
+                <pre id="observation-json">Waiting for observations...</pre>
 
             </div>
 
         </section>
 
-        <!-- ====================================================== -->
-        <!-- System Status                                          -->
-        <!-- ====================================================== -->
+
+        <!-- ============================================================ -->
+        <!-- System Status                                                -->
+        <!-- ============================================================ -->
 
         <section
             class="card"
@@ -519,104 +788,90 @@ Waiting for observations...
             <div class="card-header">
 
                 <h2>
-
                     System Status
-
                 </h2>
 
             </div>
+
 
             <div class="card-body">
 
                 <table class="info-table">
 
+
                     <tr>
 
                         <td>
-
                             Arduino Bridge
-
                         </td>
 
                         <td>
 
                             <span id="bridge-status">
-
                                 WAITING
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
                         <td>
-
                             Browser
-
                         </td>
 
                         <td>
 
                             <span id="browser-status">
-
                                 DISCONNECTED
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
                         <td>
-
                             ToF Sensor
-
                         </td>
 
                         <td>
 
                             <span id="tof-status">
-
                                 OFFLINE
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
                         <td>
-
                             Observation History
-
                         </td>
 
                         <td>
 
                             <span id="history-size">
-
                                 0
-
                             </span>
 
                             /
 
                             <span id="history-capacity">
-
                                 20
-
                             </span>
 
                         </td>
 
                     </tr>
+
 
                 </table>
 
@@ -624,9 +879,10 @@ Waiting for observations...
 
         </section>
 
-        <!-- ====================================================== -->
-        <!-- Debug Information                                      -->
-        <!-- ====================================================== -->
+
+        <!-- ============================================================ -->
+        <!-- Debug Information                                            -->
+        <!-- ============================================================ -->
 
         <section
             class="card"
@@ -635,132 +891,137 @@ Waiting for observations...
             <div class="card-header">
 
                 <h2>
-
                     Debug Information
-
                 </h2>
 
             </div>
+
 
             <div class="card-body">
 
                 <table class="info-table">
 
+
                     <tr>
 
                         <td>
-
                             Dashboard Version
-
                         </td>
 
                         <td>
 
                             <span id="dashboard-version">
-
-                                v2.1.0
-
+                                2.2.1
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
                         <td>
+                            Backend Version
+                        </td>
 
+                        <td>
+
+                            <span id="backend-version">
+                                --
+                            </span>
+
+                        </td>
+
+                    </tr>
+
+
+                    <tr>
+
+                        <td>
                             Last Update
-
                         </td>
 
                         <td>
 
                             <span id="last-update">
-
                                 --
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
                         <td>
-
                             Messages Received
-
                         </td>
 
                         <td>
 
                             <span id="message-count">
-
                                 0
-
                             </span>
 
                         </td>
 
                     </tr>
 
+
                     <tr>
 
                         <td>
-
                             Observation Engine
-
                         </td>
 
                         <td>
-
-                            Temporal ToF
-
+                            Temporal ToF + Confidence
                         </td>
 
                     </tr>
+
 
                 </table>
 
             </div>
 
         </section>
-    
+
+
     </main>
 
-    <!-- ========================================================== -->
-    <!-- Footer                                                     -->
-    <!-- ========================================================== -->
+
+    <!-- ================================================================ -->
+    <!-- Footer                                                           -->
+    <!-- ================================================================ -->
 
     <footer id="footer">
 
         <div>
-
             SixthSense
-
         </div>
 
         <div>
-
             Arduino UNO Q
-
         </div>
 
         <div>
-
-            Temporal ToF Observation Engine
-
+            Temporal ToF + Confidence Engine
         </div>
 
     </footer>
 
-    <!-- ========================================================== -->
-    <!-- JavaScript                                                 -->
-    <!-- ========================================================== -->
 
-    <script src="app.js"></script>
+    <!-- ================================================================ -->
+    <!-- JavaScript                                                       -->
+    <!-- ================================================================ -->
+
+    <script
+        src="app.js">
+    </script>
+
 
 </body>
 

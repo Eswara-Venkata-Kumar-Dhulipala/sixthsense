@@ -1,58 +1,61 @@
-/******************************************************************************
- *
- * SixthSense
- *
- * Version : 2.1.0
- *
- * Dashboard JavaScript
- *
- ******************************************************************************/
-
-/******************************************************************************
- * Configuration
- ******************************************************************************/
+/*****************************************************************************/
+/* SixthSense Dashboard - v2.2.1                                            */
+/*****************************************************************************/
 
 const APP_NAME = "SixthSense";
+const APP_VERSION = "2.2.1";
 
-const APP_VERSION = "2.1.0";
-
-const HEATMAP_ROWS = 8;
-
-const HEATMAP_COLS = 8;
+const HISTORY_CAPACITY = 20;
 
 const INVALID_DISTANCE = 4000;
-
 const MAX_DISTANCE = 3000;
 
-/******************************************************************************
- * Global State
- ******************************************************************************/
+const CONFIDENCE_HIGH = 80;
+const CONFIDENCE_MEDIUM = 50;
+
+
+/*****************************************************************************/
+/* Global State                                                              */
+/*****************************************************************************/
 
 let socket = null;
 
+let connected = false;
+
 let observation = null;
+
+let lastMessage = null;
 
 let messageCount = 0;
 
-let connected = false;
 
-/******************************************************************************
- * Heatmap
- ******************************************************************************/
+/*****************************************************************************/
+/* Canvas                                                                    */
+/*****************************************************************************/
 
-const canvas =
+const distanceCanvas =
     document.getElementById("tof-canvas");
 
-const ctx =
-    canvas.getContext("2d");
+const distanceCtx =
+    distanceCanvas.getContext("2d");
 
-/******************************************************************************
- * Cached DOM Elements
- ******************************************************************************/
 
-/*---------------------------------------------------------------------------
-Sensor Information
----------------------------------------------------------------------------*/
+const confidenceCanvas =
+    document.getElementById("confidence-canvas");
+
+const confidenceCtx =
+    confidenceCanvas.getContext("2d");
+
+
+/*****************************************************************************/
+/* DOM References                                                            */
+/*****************************************************************************/
+
+const applicationVersionElement =
+    document.getElementById("application-version");
+
+
+/* Sensor Information */
 
 const sensorIdElement =
     document.getElementById("sensor-id");
@@ -72,44 +75,52 @@ const sensorTimestampElement =
 const sensorFpsElement =
     document.getElementById("sensor-fps");
 
-/*---------------------------------------------------------------------------
-Sector Cards
----------------------------------------------------------------------------*/
 
-const sector0DistanceElement =
-    document.getElementById("sector0-distance");
+/* Sector Elements */
 
-const sector1DistanceElement =
-    document.getElementById("sector1-distance");
+const sectorElements =
+[
+    0,
+    1,
+    2
 
-const sector2DistanceElement =
-    document.getElementById("sector2-distance");
+].map(
+    (id) =>
+    ({
+        distance:
+            document.getElementById(
+                `sector${id}-distance`
+            ),
 
-/*
- * New in v2.1.0
- */
+        confidence:
+            document.getElementById(
+                `sector${id}-confidence`
+            ),
 
-const sector0VelocityElement =
-    document.getElementById("sector0-velocity");
+        confidenceLevel:
+            document.getElementById(
+                `sector${id}-confidence-level`
+            ),
 
-const sector1VelocityElement =
-    document.getElementById("sector1-velocity");
+        zone:
+            document.getElementById(
+                `sector${id}-zone`
+            ),
 
-const sector2VelocityElement =
-    document.getElementById("sector2-velocity");
+        velocity:
+            document.getElementById(
+                `sector${id}-velocity`
+            ),
 
-const sector0StateElement =
-    document.getElementById("sector0-state");
+        state:
+            document.getElementById(
+                `sector${id}-state`
+            )
+    })
+);
 
-const sector1StateElement =
-    document.getElementById("sector1-state");
 
-const sector2StateElement =
-    document.getElementById("sector2-state");
-
-/*---------------------------------------------------------------------------
-System Status
----------------------------------------------------------------------------*/
+/* System Status */
 
 const bridgeStatusElement =
     document.getElementById("bridge-status");
@@ -126,9 +137,8 @@ const historySizeElement =
 const historyCapacityElement =
     document.getElementById("history-capacity");
 
-/*---------------------------------------------------------------------------
-Debug
----------------------------------------------------------------------------*/
+
+/* Debug */
 
 const observationJsonElement =
     document.getElementById("observation-json");
@@ -136,346 +146,668 @@ const observationJsonElement =
 const dashboardVersionElement =
     document.getElementById("dashboard-version");
 
+const backendVersionElement =
+    document.getElementById("backend-version");
+
 const lastUpdateElement =
     document.getElementById("last-update");
 
 const messageCountElement =
     document.getElementById("message-count");
 
-/******************************************************************************
- * Socket.IO
- ******************************************************************************/
+
+/*****************************************************************************/
+/* Socket.IO                                                                 */
+/*****************************************************************************/
 
 socket = io();
 
-/******************************************************************************
- * Connection Events
- ******************************************************************************/
 
-socket.on("connect", () =>
+socket.on(
+    "connect",
+    () =>
+    {
+        connected = true;
+
+        console.log(
+            "Connected to backend."
+        );
+
+        setStatus(
+            browserStatusElement,
+            "CONNECTED",
+            "status-online"
+        );
+
+        /*
+         * Arduino Apps Lab expects a payload.
+         */
+
+        socket.emit(
+            "get_initial_state",
+            {}
+        );
+    }
+);
+
+
+socket.on(
+    "disconnect",
+    () =>
+    {
+        connected = false;
+
+        console.log(
+            "Disconnected from backend."
+        );
+
+        setStatus(
+            browserStatusElement,
+            "DISCONNECTED",
+            "status-offline"
+        );
+
+        setStatus(
+            bridgeStatusElement,
+            "WAITING",
+            "status-warning"
+        );
+    }
+);
+
+
+/*****************************************************************************/
+/* ToF Messages                                                              */
+/*****************************************************************************/
+
+socket.on(
+    "tof_frame",
+    (message) =>
+    {
+        if (
+            !message
+            ||
+            !message.observation
+        )
+        {
+            return;
+        }
+
+        lastMessage =
+            message;
+
+        observation =
+            message.observation;
+
+        messageCount += 1;
+
+        messageCountElement.textContent =
+            messageCount;
+
+        lastUpdateElement.textContent =
+            new Date().toLocaleTimeString();
+
+        if (
+            message.app_version
+        )
+        {
+            backendVersionElement.textContent =
+                message.app_version;
+        }
+
+        updateDashboard(
+            message
+        );
+
+        updateHeatmaps(
+            message
+        );
+    }
+);
+
+
+/*****************************************************************************/
+/* Dashboard Update                                                          */
+/*****************************************************************************/
+
+function updateDashboard(
+    message
+)
 {
-    connected = true;
+    if (
+        !message
+        ||
+        !message.observation
+    )
+    {
+        return;
+    }
 
-    console.log("Connected to backend.");
-
-    browserStatusElement.textContent =
-        "CONNECTED";
-
-    browserStatusElement.className =
-        "status-online";
-
-    /*
-     * Arduino App Lab expects a payload.
-     */
-
-    socket.emit(
-        "get_initial_state",
-        {}
-    );
-});
-
-socket.on("disconnect", () =>
-{
-    connected = false;
-
-    console.log("Disconnected.");
-
-    browserStatusElement.textContent =
-        "DISCONNECTED";
-
-    browserStatusElement.className =
-        "status-offline";
-});
-
-/******************************************************************************
- * Dashboard Messages
- ******************************************************************************/
-
-socket.on("tof_frame", (message) =>
-{
-    messageCount++;
-
-    messageCountElement.textContent =
-        messageCount;
-
-    lastUpdateElement.textContent =
-        new Date().toLocaleTimeString();
-
-    observation =
+    const obs =
         message.observation;
 
-    updateDashboard(message);
-
-    updateHeatmap(message);
-});
-
-/******************************************************************************
- * Startup
- ******************************************************************************/
-
-window.addEventListener("load", () =>
-{
-    dashboardVersionElement.textContent =
-        APP_VERSION;
-
-    historyCapacityElement.textContent =
-        20;
-
-    console.log(
-        APP_NAME +
-        " Dashboard Started"
-    );
-});
-
-/******************************************************************************
- * Dashboard Update
- ******************************************************************************/
-
-function updateDashboard(message)
-{
-    if (!message)
-        return;
-
-    if (!message.observation)
-        return;
-
-    observation = message.observation;
-
     updateSensorInformation(
-        observation
+        obs
     );
 
     updateSectorCards(
-        observation
+        obs
     );
 
     updateSystemStatus(
-        observation
+        obs
     );
 
     updateObservationJSON(
-        observation
+        obs
     );
 }
 
-/******************************************************************************
- * Sensor Information
- ******************************************************************************/
 
-function updateSensorInformation(observation)
+/*****************************************************************************/
+/* Sensor Information                                                        */
+/*****************************************************************************/
+
+function updateSensorInformation(
+    obs
+)
 {
-    sensorIdElement.textContent =
-        observation.sensor_id;
+    setText(
+        sensorIdElement,
+        obs.sensor_id ?? "--"
+    );
 
-    sensorNameElement.textContent =
-        observation.sensor_name;
+    setText(
+        sensorNameElement,
+        obs.sensor_name ?? "--"
+    );
 
-    sensorStatusElement.textContent =
-        observation.status;
+    setText(
+        sensorFrameElement,
+        obs.frame_number ?? 0
+    );
 
-    sensorFrameElement.textContent =
-        observation.frame_number;
+    setText(
+        sensorTimestampElement,
+        obs.timestamp ?? 0
+    );
 
-    sensorTimestampElement.textContent =
-        observation.timestamp;
+    setText(
+        sensorFpsElement,
+        Number(
+            obs.fps ?? 0
+        ).toFixed(1)
+    );
 
-    sensorFpsElement.textContent =
-        observation.fps;
+    const online =
+        obs.status === "ONLINE";
 
-    sensorStatusElement.className = "";
-
-    if (observation.status === "ONLINE")
-    {
-        sensorStatusElement.classList.add(
-            "status-online"
-        );
-    }
-    else
-    {
-        sensorStatusElement.classList.add(
-            "status-offline"
-        );
-    }
+    setStatus(
+        sensorStatusElement,
+        obs.status ?? "OFFLINE",
+        online
+            ? "status-online"
+            : "status-offline"
+    );
 }
 
-/******************************************************************************
- * Sector Cards
- ******************************************************************************/
 
-function updateSectorCards(observation)
+/*****************************************************************************/
+/* Sector Cards                                                              */
+/*****************************************************************************/
+
+function updateSectorCards(
+    obs
+)
 {
-    if (!observation.sectors)
+    if (
+        !Array.isArray(
+            obs.sectors
+        )
+    )
+    {
         return;
+    }
 
-    if (observation.sectors.length !== 3)
+    if (
+        obs.sectors.length !== 3
+    )
+    {
         return;
+    }
 
-    updateSector(
-        observation.sectors[0],
-        sector0DistanceElement,
-        sector0VelocityElement,
-        sector0StateElement
-    );
-
-    updateSector(
-        observation.sectors[1],
-        sector1DistanceElement,
-        sector1VelocityElement,
-        sector1StateElement
-    );
-
-    updateSector(
-        observation.sectors[2],
-        sector2DistanceElement,
-        sector2VelocityElement,
-        sector2StateElement
+    obs.sectors.forEach(
+        (
+            sector,
+            index
+        ) =>
+        {
+            updateSector(
+                sector,
+                sectorElements[index]
+            );
+        }
     );
 }
 
-/******************************************************************************
- * Sector Update
- ******************************************************************************/
+
+/*****************************************************************************/
+/* Single Sector                                                             */
+/*****************************************************************************/
 
 function updateSector(
     sector,
-    distanceElement,
-    velocityElement,
-    stateElement
+    elements
 )
 {
-    distanceElement.textContent =
-        sector.distance_mm;
+    const distance =
+        Number(
+            sector.distance_mm ?? 0
+        );
 
-    velocityElement.textContent =
-        sector.velocity_mmps.toFixed(1);
+    const confidence =
+        Number(
+            sector.confidence ?? 0
+        );
 
-    stateElement.textContent =
-        sector.velocity_state;
+    const velocity =
+        Number(
+            sector.velocity_mmps ?? 0
+        );
 
-    stateElement.className = "";
+    const zoneId =
+        Number.isInteger(
+            sector.zone_id
+        )
+            ? sector.zone_id
+            : -1;
 
-    switch (sector.velocity_state)
+    const velocityState =
+        sector.velocity_state
+        ??
+        "Stationary";
+
+
+    /*
+     * Distance
+     */
+
+    elements.distance.textContent =
+        distance > 0
+            ? distance
+            : "--";
+
+
+    /*
+     * Confidence
+     */
+
+    elements.confidence.textContent =
+        confidence.toFixed(1);
+
+    updateConfidenceBadge(
+        elements.confidenceLevel,
+        confidence
+    );
+
+
+    /*
+     * Sensor Zone
+     */
+
+    elements.zone.textContent =
+        zoneId >= 0
+            ? zoneId
+            : "--";
+
+
+    /*
+     * Velocity
+     */
+
+    elements.velocity.textContent =
+        velocity.toFixed(1);
+
+
+    /*
+     * Motion State
+     */
+
+    elements.state.textContent =
+        velocityState;
+
+    updateVelocityState(
+        elements.state,
+        velocityState
+    );
+}
+
+
+/*****************************************************************************/
+/* Confidence Badge                                                          */
+/*****************************************************************************/
+
+function updateConfidenceBadge(
+    element,
+    confidence
+)
+{
+    element.className =
+        "confidence-level";
+
+    if (
+        confidence >=
+        CONFIDENCE_HIGH
+    )
+    {
+        element.textContent =
+            "HIGH";
+
+        element.classList.add(
+            "confidence-high"
+        );
+    }
+
+    else if (
+        confidence >=
+        CONFIDENCE_MEDIUM
+    )
+    {
+        element.textContent =
+            "MEDIUM";
+
+        element.classList.add(
+            "confidence-medium"
+        );
+    }
+
+    else if (
+        confidence > 0
+    )
+    {
+        element.textContent =
+            "LOW";
+
+        element.classList.add(
+            "confidence-low"
+        );
+    }
+
+    else
+    {
+        element.textContent =
+            "INVALID";
+
+        element.classList.add(
+            "confidence-invalid"
+        );
+    }
+}
+
+
+/*****************************************************************************/
+/* Velocity State                                                            */
+/*****************************************************************************/
+
+function updateVelocityState(
+    element,
+    state
+)
+{
+    element.className =
+        "state-value";
+
+    switch (
+        state
+    )
     {
         case "Approaching":
 
-            stateElement.classList.add(
+            element.classList.add(
                 "status-danger"
             );
 
             break;
 
+
         case "Receding":
 
-            stateElement.classList.add(
+            element.classList.add(
                 "status-online"
             );
 
             break;
 
+
         default:
 
-            stateElement.classList.add(
+            element.classList.add(
                 "status-warning"
             );
+
+            break;
     }
 }
 
-/******************************************************************************
- * Observation JSON
- ******************************************************************************/
 
-function updateObservationJSON(observation)
+/*****************************************************************************/
+/* System Status                                                             */
+/*****************************************************************************/
+
+function updateSystemStatus(
+    obs
+)
+{
+    /*
+     * Browser
+     */
+
+    setStatus(
+        browserStatusElement,
+
+        connected
+            ? "CONNECTED"
+            : "DISCONNECTED",
+
+        connected
+            ? "status-online"
+            : "status-offline"
+    );
+
+
+    /*
+     * Arduino Bridge
+     *
+     * A valid tof_frame means the complete Bridge path is working.
+     */
+
+    setStatus(
+        bridgeStatusElement,
+        "CONNECTED",
+        "status-online"
+    );
+
+
+    /*
+     * ToF Sensor
+     */
+
+    const online =
+        obs.status === "ONLINE";
+
+    setStatus(
+        tofStatusElement,
+        obs.status ?? "OFFLINE",
+
+        online
+            ? "status-online"
+            : "status-offline"
+    );
+
+
+    /*
+     * History
+     */
+
+    historySizeElement.textContent =
+        obs.history_size ?? 0;
+
+    historyCapacityElement.textContent =
+        HISTORY_CAPACITY;
+}
+
+
+/*****************************************************************************/
+/* Observation JSON                                                          */
+/*****************************************************************************/
+
+function updateObservationJSON(
+    obs
+)
 {
     observationJsonElement.textContent =
         JSON.stringify(
-            observation,
+            obs,
             null,
             4
         );
 }
 
-/******************************************************************************
- * System Status
- ******************************************************************************/
 
-function updateSystemStatus(observation)
+/*****************************************************************************/
+/* Heatmaps                                                                  */
+/*****************************************************************************/
+
+function updateHeatmaps(
+    message
+)
 {
-    if (connected)
+    if (
+        Array.isArray(
+            message.image
+        )
+    )
     {
-        browserStatusElement.textContent =
-            "CONNECTED";
-
-        browserStatusElement.className =
-            "status-online";
-    }
-    else
-    {
-        browserStatusElement.textContent =
-            "DISCONNECTED";
-
-        browserStatusElement.className =
-            "status-offline";
-    }
-
-    bridgeStatusElement.textContent =
-        "CONNECTED";
-
-    bridgeStatusElement.className =
-        "status-online";
-
-    tofStatusElement.textContent =
-        observation.status;
-
-    tofStatusElement.className = "";
-
-    if (observation.status === "ONLINE")
-    {
-        tofStatusElement.classList.add(
-            "status-online"
-        );
-    }
-    else
-    {
-        tofStatusElement.classList.add(
-            "status-offline"
+        drawDistanceHeatmap(
+            message.image
         );
     }
 
-    historySizeElement.textContent =
-        observation.history_size;
-
-    historyCapacityElement.textContent =
-        "20";
+    if (
+        Array.isArray(
+            message.confidence_image
+        )
+    )
+    {
+        drawConfidenceHeatmap(
+            message.confidence_image
+        );
+    }
 }
 
-/******************************************************************************
- * Heatmap Renderer
- ******************************************************************************/
 
-function updateHeatmap(message)
+/*****************************************************************************/
+/* Distance Heatmap                                                          */
+/*****************************************************************************/
+
+function drawDistanceHeatmap(
+    image
+)
 {
-    if (!message)
-        return;
+    drawGrid(
 
-    if (!message.image)
-        return;
+        distanceCanvas,
 
-    drawHeatmap(
-        message.image
+        distanceCtx,
+
+        image,
+
+        distanceToColor,
+
+        (value) =>
+        {
+            if (
+                value > 0
+                &&
+                value < INVALID_DISTANCE
+            )
+            {
+                return `${Math.round(value)}`;
+            }
+
+            return "";
+        }
     );
 }
 
-function drawHeatmap(image)
-{
-    const rows = image.length;
 
-    const cols = image[0].length;
+/*****************************************************************************/
+/* Confidence Heatmap                                                        */
+/*****************************************************************************/
+
+function drawConfidenceHeatmap(
+    image
+)
+{
+    drawGrid(
+
+        confidenceCanvas,
+
+        confidenceCtx,
+
+        image,
+
+        confidenceToColor,
+
+        (value) =>
+            `${Number(value).toFixed(0)}%`
+    );
+}
+
+
+/*****************************************************************************/
+/* Generic 8x8 Grid Renderer                                                 */
+/*****************************************************************************/
+
+function drawGrid(
+    canvas,
+    ctx,
+    image,
+    colorFunction,
+    textFunction
+)
+{
+    if (
+        !Array.isArray(
+            image
+        )
+        ||
+        image.length === 0
+        ||
+        !Array.isArray(
+            image[0]
+        )
+    )
+    {
+        return;
+    }
+
+    const rows =
+        image.length;
+
+    const cols =
+        image[0].length;
 
     const cellWidth =
-        canvas.width / cols;
+        canvas.width
+        /
+        cols;
 
     const cellHeight =
-        canvas.height / rows;
+        canvas.height
+        /
+        rows;
+
 
     ctx.clearRect(
         0,
@@ -484,390 +816,450 @@ function drawHeatmap(image)
         canvas.height
     );
 
-    for (let row = 0; row < rows; row++)
+
+    for (
+        let row = 0;
+        row < rows;
+        row++
+    )
     {
-        for (let col = 0; col < cols; col++)
+        for (
+            let col = 0;
+            col < cols;
+            col++
+        )
         {
-            const distance =
-                image[row][col];
+            const value =
+                Number(
+                    image[row][col]
+                    ??
+                    0
+                );
+
+            const x =
+                col
+                *
+                cellWidth;
+
+            const y =
+                row
+                *
+                cellHeight;
+
+
+            /*
+             * Cell Background
+             */
+
+            const cellColor =
+                colorFunction(
+                    value
+                );
 
             ctx.fillStyle =
-                distanceToColor(distance);
+                cellColor;
 
             ctx.fillRect(
-                col * cellWidth,
-                row * cellHeight,
+                x,
+                y,
                 cellWidth,
                 cellHeight
             );
 
-            ctx.strokeStyle = "#444";
+
+            /*
+             * Cell Border
+             */
+
+            ctx.strokeStyle =
+                "#475569";
+
+            ctx.lineWidth =
+                1;
 
             ctx.strokeRect(
-                col * cellWidth,
-                row * cellHeight,
+                x,
+                y,
                 cellWidth,
                 cellHeight
             );
 
-            if (distance !== 0)
+
+            /*
+             * Cell Text
+             */
+
+            const text =
+                textFunction(
+                    value
+                );
+
+            if (
+                text
+            )
             {
-                ctx.fillStyle = "#000";
+                ctx.fillStyle =
+                    getReadableTextColor(
+                        cellColor
+                    );
 
-                ctx.font = "12px Arial";
+                ctx.font =
+                    "600 13px Arial";
 
-                ctx.textAlign = "center";
+                ctx.textAlign =
+                    "center";
 
-                ctx.textBaseline = "middle";
+                ctx.textBaseline =
+                    "middle";
 
                 ctx.fillText(
-                    distance,
-                    col * cellWidth + cellWidth / 2,
-                    row * cellHeight + cellHeight / 2
+
+                    text,
+
+                    x
+                    +
+                    cellWidth / 2,
+
+                    y
+                    +
+                    cellHeight / 2
                 );
             }
         }
     }
 
+
+    /*
+     * Logical sector boundaries
+     */
+
     drawSectorBoundaries(
-        cellWidth,
-        cellHeight
+        canvas,
+        ctx,
+        cellWidth
     );
 }
 
-/******************************************************************************
- * Sector Overlay
- ******************************************************************************/
+
+/*****************************************************************************/
+/* Sector Boundaries                                                         */
+/*****************************************************************************/
 
 function drawSectorBoundaries(
-    cellWidth,
-    cellHeight
+    canvas,
+    ctx,
+    cellWidth
 )
 {
-    ctx.strokeStyle = "#ff0000";
+    ctx.save();
 
-    ctx.lineWidth = 3;
+    ctx.strokeStyle =
+        "#ef4444";
 
-    /*
-     * Sector 0 | Sector 1
-     */
-
-    ctx.beginPath();
-
-    ctx.moveTo(
-        cellWidth * 2,
-        0
-    );
-
-    ctx.lineTo(
-        cellWidth * 2,
-        canvas.height
-    );
-
-    ctx.stroke();
+    ctx.lineWidth =
+        4;
 
     /*
-     * Sector 1 | Sector 2
+     * Sectors:
+     *
+     * 0 1 | 2 3 4 | 5 6 7
      */
 
-    ctx.beginPath();
+    [
+        2,
+        5
 
-    ctx.moveTo(
-        cellWidth * 5,
-        0
+    ].forEach(
+        (column) =>
+        {
+            ctx.beginPath();
+
+            ctx.moveTo(
+                cellWidth
+                *
+                column,
+                0
+            );
+
+            ctx.lineTo(
+                cellWidth
+                *
+                column,
+                canvas.height
+            );
+
+            ctx.stroke();
+        }
     );
 
-    ctx.lineTo(
-        cellWidth * 5,
-        canvas.height
-    );
-
-    ctx.stroke();
-
-    ctx.lineWidth = 1;
+    ctx.restore();
 }
 
-/******************************************************************************
- * Distance Colour Map
- ******************************************************************************/
 
-function distanceToColor(distance)
+/*****************************************************************************/
+/* Distance Colour Mapping                                                   */
+/*****************************************************************************/
+
+function distanceToColor(
+    distance
+)
 {
-    if (distance === 0)
+    if (
+        distance <= 0
+        ||
+        distance >= INVALID_DISTANCE
+    )
+    {
         return "#ffffff";
-
-    if (distance >= INVALID_DISTANCE)
-        return "#ffffff";
+    }
 
     const normalized =
         Math.min(
             distance,
             MAX_DISTANCE
-        ) / MAX_DISTANCE;
+        )
+        /
+        MAX_DISTANCE;
 
     /*
-     * Hue
-     *
-     * 0 mm      -> Red
-     * 3000 mm   -> Green
+     * 0 mm    -> Red
+     * 3000 mm -> Green
      */
 
     const hue =
-        normalized * 120;
+        normalized
+        *
+        120;
 
-    return `hsl(${hue},100%,50%)`;
+    return `hsl(${hue}, 100%, 50%)`;
 }
 
-/******************************************************************************
- * Utility Functions
- ******************************************************************************/
+
+/*****************************************************************************/
+/* Confidence Colour Mapping                                                 */
+/*****************************************************************************/
+
+function confidenceToColor(
+    confidence
+)
+{
+    const clamped =
+        Math.max(
+            0,
+            Math.min(
+                100,
+                confidence
+            )
+        );
+
+    if (
+        clamped <= 0
+    )
+    {
+        return "#e5e7eb";
+    }
+
+    /*
+     * 0%   -> Red
+     * 50%  -> Yellow
+     * 100% -> Green
+     */
+
+    const hue =
+        (
+            clamped
+            /
+            100
+        )
+        *
+        120;
+
+    return `hsl(${hue}, 90%, 48%)`;
+}
+
+
+/*****************************************************************************/
+/* Heatmap Text Colour                                                       */
+/*****************************************************************************/
+
+function getReadableTextColor(
+    color
+)
+{
+    if (
+        color === "#ffffff"
+        ||
+        color === "#e5e7eb"
+    )
+    {
+        return "#111827";
+    }
+
+    /*
+     * Current heatmap colours are bright enough for dark text.
+     */
+
+    return "#111827";
+}
+
+
+/*****************************************************************************/
+/* Utilities                                                                 */
+/*****************************************************************************/
 
 function setText(
     element,
     value
 )
 {
-    if (!element)
-        return;
-
-    element.textContent = value;
-}
-
-function setStatus(
-    element,
-    value
-)
-{
-    if (!element)
-        return;
-
-    element.textContent = value;
-
-    element.className = "";
-
-    switch (value)
+    if (
+        element
+    )
     {
-        case "ONLINE":
-
-            element.classList.add(
-                "status-online"
-            );
-
-            break;
-
-        case "OFFLINE":
-
-            element.classList.add(
-                "status-offline"
-            );
-
-            break;
-
-        case "Approaching":
-
-            element.classList.add(
-                "status-danger"
-            );
-
-            break;
-
-        case "Receding":
-
-            element.classList.add(
-                "status-online"
-            );
-
-            break;
-
-        case "Stationary":
-
-            element.classList.add(
-                "status-warning"
-            );
-
-            break;
-
-        default:
-
-            element.classList.add(
-                "status-warning"
-            );
+        element.textContent =
+            value;
     }
 }
 
-/******************************************************************************
- * Dashboard Initialization
- ******************************************************************************/
+
+function setStatus(
+    element,
+    value,
+    className
+)
+{
+    if (
+        !element
+    )
+    {
+        return;
+    }
+
+    element.textContent =
+        value;
+
+    element.className =
+        className;
+}
+
+
+/*****************************************************************************/
+/* Dashboard Initialization                                                  */
+/*****************************************************************************/
 
 function initializeDashboard()
 {
-    console.log("==========================================");
-
-    console.log(APP_NAME);
-
-    console.log("Version :", APP_VERSION);
-
-    console.log("==========================================");
+    applicationVersionElement.textContent =
+        `v${APP_VERSION}`;
 
     dashboardVersionElement.textContent =
         APP_VERSION;
 
-    browserStatusElement.textContent =
-        "DISCONNECTED";
-
-    browserStatusElement.className =
-        "status-offline";
-
-    bridgeStatusElement.textContent =
-        "WAITING";
-
-    bridgeStatusElement.className =
-        "status-warning";
-
-    tofStatusElement.textContent =
-        "OFFLINE";
-
-    tofStatusElement.className =
-        "status-offline";
+    backendVersionElement.textContent =
+        "--";
 
     historySizeElement.textContent =
         "0";
 
     historyCapacityElement.textContent =
-        "20";
+        HISTORY_CAPACITY;
+
+    messageCountElement.textContent =
+        "0";
+
+    lastUpdateElement.textContent =
+        "--";
+
+
+    setStatus(
+        browserStatusElement,
+        "DISCONNECTED",
+        "status-offline"
+    );
+
+    setStatus(
+        bridgeStatusElement,
+        "WAITING",
+        "status-warning"
+    );
+
+    setStatus(
+        tofStatusElement,
+        "OFFLINE",
+        "status-offline"
+    );
+
+    setStatus(
+        sensorStatusElement,
+        "OFFLINE",
+        "status-offline"
+    );
+
 
     observationJsonElement.textContent =
         "Waiting for observations...";
+
+
+    console.log(
+        "=========================================="
+    );
+
+    console.log(
+        APP_NAME
+    );
+
+    console.log(
+        "Dashboard Version:",
+        APP_VERSION
+    );
+
+    console.log(
+        "Temporal ToF + Confidence Engine"
+    );
+
+    console.log(
+        "=========================================="
+    );
 }
 
-/******************************************************************************
- * Browser Ready
- ******************************************************************************/
+
+/*****************************************************************************/
+/* Browser Ready                                                             */
+/*****************************************************************************/
 
 window.addEventListener(
     "DOMContentLoaded",
-    () =>
-    {
-        initializeDashboard();
-    }
+    initializeDashboard
 );
 
-/******************************************************************************
- * Window Resize
- ******************************************************************************/
+
+/*****************************************************************************/
+/* Window Resize                                                             */
+/*****************************************************************************/
 
 window.addEventListener(
     "resize",
     () =>
     {
-        if (!observation)
-            return;
+        /*
+         * Redraw using the complete last backend message.
+         *
+         * The old v2.1.0 implementation attempted to access
+         * observation.image, but image belongs to the top-level message.
+         */
 
-        drawHeatmap(
-            observation.image ?? []
-        );
-    }
-);
-
-/******************************************************************************
- * Dashboard Refresh
- *
- * Reserved for future versions.
- ******************************************************************************/
-
-function refreshDashboard()
-{
-    if (!observation)
-        return;
-
-    updateDashboard(
+        if (
+            lastMessage
+        )
         {
-            observation: observation
+            updateHeatmaps(
+                lastMessage
+            );
         }
-    );
-}
-
-/******************************************************************************
- * Future Roadmap
- *
- * v2.2.0
- * --------
- *  - Observation Persistence
- *  - Persistence Visualization
- *
- * v3.0.0
- * --------
- *  - Multi-ToF Observation
- *  - Six Independent Observation Engines
- *
- * v4.0.0
- * --------
- *  - Context Engine
- *
- * v5.0.0
- * --------
- *  - Attention Engine
- *
- * v6.0.0
- * --------
- *  - Feedback Engine
- *
- ******************************************************************************/
-
-/******************************************************************************
- * Dashboard Validation
- ******************************************************************************/
-
-function validateObservation(observation)
-{
-    if (!observation)
-        return false;
-
-    if (!observation.sectors)
-        return false;
-
-    if (observation.sectors.length !== 3)
-        return false;
-
-    return true;
-}
-
-/******************************************************************************
- * Browser Diagnostics
- ******************************************************************************/
-
-function printDashboardInfo()
-{
-    console.log("==========================================");
-
-    console.log(APP_NAME);
-
-    console.log("Dashboard Version :", APP_VERSION);
-
-    console.log("Temporal ToF Observation Engine");
-
-    console.log("==========================================");
-}
-
-/******************************************************************************
- * Application Startup
- ******************************************************************************/
-
-window.addEventListener(
-    "DOMContentLoaded",
-    () =>
-    {
-        printDashboardInfo();
-
-        initializeDashboard();
     }
 );
 
-/******************************************************************************
- * End of File
- *
- * SixthSense
- *
- * Version : 2.1.0
- *
- ******************************************************************************/
+
+/*****************************************************************************/
+/* End of File                                                               */
+/*****************************************************************************/
