@@ -1,1028 +1,504 @@
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
-
     <meta charset="UTF-8">
-
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0">
 
-    <title>
-        SixthSense
-    </title>
+    <title>SixthSense</title>
 
     <link
         rel="stylesheet"
         href="style.css">
 
-    <script
-        src="libs/socket.io.min.js">
-    </script>
-
+    <script src="libs/socket.io.min.js"></script>
 </head>
-
 
 <body>
 
-    <!-- ================================================================ -->
-    <!-- Header                                                           -->
-    <!-- ================================================================ -->
+    <!-- ========================================================== -->
+    <!-- Header                                                     -->
+    <!-- ========================================================== -->
 
     <header id="app-header">
-
-        <h1>
-            SixthSense
-        </h1>
+        <h1>SixthSense</h1>
 
         <h2>
-            Temporal ToF Observation + Confidence Engine
+            Confidence-Aware Temporal ToF Observation + Motion Persistence Engine
         </h2>
 
         <div id="version-container">
-
-            <span id="application-name">
-                SixthSense
-            </span>
-
+            <span id="application-name">SixthSense</span>
             |
-
-            <span id="application-version">
-                v2.2.1
-            </span>
-
+            <span id="application-version">v2.3.0</span>
         </div>
-
     </header>
 
-
-    <!-- ================================================================ -->
-    <!-- Dashboard                                                        -->
-    <!-- ================================================================ -->
+    <!-- ========================================================== -->
+    <!-- Main Dashboard                                             -->
+    <!-- ========================================================== -->
 
     <main id="dashboard">
 
-
-        <!-- ============================================================ -->
-        <!-- Sensor Information                                           -->
-        <!-- ============================================================ -->
+        <!-- ====================================================== -->
+        <!-- Sensor Information                                     -->
+        <!-- ====================================================== -->
 
         <section
             class="card"
             id="sensor-card">
 
             <div class="card-header">
-
-                <h2>
-                    Sensor Information
-                </h2>
-
+                <h2>Sensor Information</h2>
             </div>
-
 
             <div class="card-body">
-
                 <table class="info-table">
-
                     <tr>
-
-                        <td>
-                            Sensor ID
-                        </td>
-
-                        <td>
-
-                            <span id="sensor-id">
-                                --
-                            </span>
-
-                        </td>
-
+                        <td>Sensor ID</td>
+                        <td><span id="sensor-id">--</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Sensor Name
-                        </td>
-
-                        <td>
-
-                            <span id="sensor-name">
-                                --
-                            </span>
-
-                        </td>
-
+                        <td>Sensor Name</td>
+                        <td><span id="sensor-name">--</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Status
-                        </td>
-
-                        <td>
-
-                            <span id="sensor-status">
-                                OFFLINE
-                            </span>
-
-                        </td>
-
+                        <td>Status</td>
+                        <td><span id="sensor-status">OFFLINE</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Frame
-                        </td>
-
-                        <td>
-
-                            <span id="sensor-frame">
-                                0
-                            </span>
-
-                        </td>
-
+                        <td>Frame</td>
+                        <td><span id="sensor-frame">0</span></td>
                     </tr>
 
-
                     <tr>
-
+                        <td>Timestamp</td>
                         <td>
-                            Timestamp
-                        </td>
-
-                        <td>
-
-                            <span id="sensor-timestamp">
-                                0
-                            </span>
-
+                            <span id="sensor-timestamp">0</span>
                             ms
-
                         </td>
-
                     </tr>
-
 
                     <tr>
-
-                        <td>
-                            FPS
-                        </td>
-
-                        <td>
-
-                            <span id="sensor-fps">
-                                0.0
-                            </span>
-
-                        </td>
-
+                        <td>FPS</td>
+                        <td><span id="sensor-fps">0</span></td>
                     </tr>
-
                 </table>
-
             </div>
-
         </section>
 
-
-        <!-- ============================================================ -->
-        <!-- ToF Observation                                               -->
-        <!-- ============================================================ -->
+        <!-- ====================================================== -->
+        <!-- ToF Observation                                        -->
+        <!-- ====================================================== -->
 
         <section
             class="card"
             id="observation-card">
 
             <div class="card-header">
-
-                <h2>
-                    ToF Observation
-                </h2>
-
+                <h2>ToF Observation</h2>
             </div>
 
-
             <div class="card-body">
-
                 <div class="sector-grid">
 
-
-                    <!-- ================================================= -->
-                    <!-- Sector 0                                          -->
-                    <!-- ================================================= -->
+                    <!-- Sector 0 -->
 
                     <div
                         class="sector-card"
                         id="sector0-card">
 
-                        <h3>
-                            Sector 0
-                        </h3>
+                        <h3>Sector 0</h3>
 
-
-                        <table
-                            class="info-table sector-table">
-
-
+                        <table class="info-table">
                             <tr>
-
+                                <td>Distance</td>
                                 <td>
-                                    Distance
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector0-distance"
-                                        class="distance-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="distance-value">--</span>
                                     mm
-
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Confidence</td>
                                 <td>
-                                    Confidence
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector0-confidence"
-                                        class="confidence-value">
-
-                                        0.0
-
-                                    </span>
-
+                                        class="confidence-value">--</span>
                                     %
-
                                     <span
                                         id="sector0-confidence-level"
-                                        class="confidence-level confidence-invalid">
-
+                                        class="confidence-badge confidence-invalid">
                                         INVALID
-
                                     </span>
-
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Zone</td>
                                 <td>
-                                    Zone
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector0-zone"
-                                        class="zone-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="zone-value">--</span>
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Velocity</td>
                                 <td>
-                                    Velocity
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector0-velocity"
-                                        class="velocity-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="velocity-value">--</span>
                                     mm/s
-
                                 </td>
-
                             </tr>
-
 
                             <tr>
-
+                                <td>Velocity State</td>
                                 <td>
-                                    State
-                                </td>
-
-                                <td>
-
                                     <span
-                                        id="sector0-state"
-                                        class="state-value">
-
-                                        --
-
-                                    </span>
-
+                                        id="sector0-velocity-state"
+                                        class="state-value">--</span>
                                 </td>
-
                             </tr>
 
-
+                            <tr>
+                                <td>Motion Persistence</td>
+                                <td>
+                                    <span
+                                        id="sector0-persistence"
+                                        class="persistence-value">0</span>
+                                </td>
+                            </tr>
                         </table>
-
                     </div>
 
-
-                    <!-- ================================================= -->
-                    <!-- Sector 1                                          -->
-                    <!-- ================================================= -->
+                    <!-- Sector 1 -->
 
                     <div
                         class="sector-card"
                         id="sector1-card">
 
-                        <h3>
-                            Sector 1
-                        </h3>
+                        <h3>Sector 1</h3>
 
-
-                        <table
-                            class="info-table sector-table">
-
-
+                        <table class="info-table">
                             <tr>
-
+                                <td>Distance</td>
                                 <td>
-                                    Distance
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector1-distance"
-                                        class="distance-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="distance-value">--</span>
                                     mm
-
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Confidence</td>
                                 <td>
-                                    Confidence
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector1-confidence"
-                                        class="confidence-value">
-
-                                        0.0
-
-                                    </span>
-
+                                        class="confidence-value">--</span>
                                     %
-
                                     <span
                                         id="sector1-confidence-level"
-                                        class="confidence-level confidence-invalid">
-
+                                        class="confidence-badge confidence-invalid">
                                         INVALID
-
                                     </span>
-
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Zone</td>
                                 <td>
-                                    Zone
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector1-zone"
-                                        class="zone-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="zone-value">--</span>
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Velocity</td>
                                 <td>
-                                    Velocity
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector1-velocity"
-                                        class="velocity-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="velocity-value">--</span>
                                     mm/s
-
                                 </td>
-
                             </tr>
-
 
                             <tr>
-
+                                <td>Velocity State</td>
                                 <td>
-                                    State
-                                </td>
-
-                                <td>
-
                                     <span
-                                        id="sector1-state"
-                                        class="state-value">
-
-                                        --
-
-                                    </span>
-
+                                        id="sector1-velocity-state"
+                                        class="state-value">--</span>
                                 </td>
-
                             </tr>
 
-
+                            <tr>
+                                <td>Motion Persistence</td>
+                                <td>
+                                    <span
+                                        id="sector1-persistence"
+                                        class="persistence-value">0</span>
+                                </td>
+                            </tr>
                         </table>
-
                     </div>
 
-
-                    <!-- ================================================= -->
-                    <!-- Sector 2                                          -->
-                    <!-- ================================================= -->
+                    <!-- Sector 2 -->
 
                     <div
                         class="sector-card"
                         id="sector2-card">
 
-                        <h3>
-                            Sector 2
-                        </h3>
+                        <h3>Sector 2</h3>
 
-
-                        <table
-                            class="info-table sector-table">
-
-
+                        <table class="info-table">
                             <tr>
-
+                                <td>Distance</td>
                                 <td>
-                                    Distance
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector2-distance"
-                                        class="distance-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="distance-value">--</span>
                                     mm
-
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Confidence</td>
                                 <td>
-                                    Confidence
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector2-confidence"
-                                        class="confidence-value">
-
-                                        0.0
-
-                                    </span>
-
+                                        class="confidence-value">--</span>
                                     %
-
                                     <span
                                         id="sector2-confidence-level"
-                                        class="confidence-level confidence-invalid">
-
+                                        class="confidence-badge confidence-invalid">
                                         INVALID
-
                                     </span>
-
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Zone</td>
                                 <td>
-                                    Zone
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector2-zone"
-                                        class="zone-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="zone-value">--</span>
                                 </td>
-
                             </tr>
 
-
                             <tr>
-
+                                <td>Velocity</td>
                                 <td>
-                                    Velocity
-                                </td>
-
-                                <td>
-
                                     <span
                                         id="sector2-velocity"
-                                        class="velocity-value">
-
-                                        --
-
-                                    </span>
-
+                                        class="velocity-value">--</span>
                                     mm/s
-
                                 </td>
-
                             </tr>
-
 
                             <tr>
-
+                                <td>Velocity State</td>
                                 <td>
-                                    State
-                                </td>
-
-                                <td>
-
                                     <span
-                                        id="sector2-state"
-                                        class="state-value">
-
-                                        --
-
-                                    </span>
-
+                                        id="sector2-velocity-state"
+                                        class="state-value">--</span>
                                 </td>
-
                             </tr>
 
-
+                            <tr>
+                                <td>Motion Persistence</td>
+                                <td>
+                                    <span
+                                        id="sector2-persistence"
+                                        class="persistence-value">0</span>
+                                </td>
+                            </tr>
                         </table>
-
                     </div>
 
-
                 </div>
-
             </div>
-
         </section>
 
-
-        <!-- ============================================================ -->
-        <!-- Heatmaps                                                     -->
-        <!-- ============================================================ -->
+        <!-- ====================================================== -->
+        <!-- Heatmaps                                                -->
+        <!-- ====================================================== -->
 
         <section
-            class="card full-width"
+            class="card"
             id="heatmap-card">
 
             <div class="card-header">
-
-                <h2>
-                    ToF Heatmaps
-                </h2>
-
+                <h2>ToF Heatmaps</h2>
             </div>
 
-
             <div class="card-body">
-
                 <div class="heatmap-grid">
 
-
-                    <!-- ================================================= -->
-                    <!-- Distance Heatmap                                   -->
-                    <!-- ================================================= -->
-
                     <div class="heatmap-panel">
-
-                        <h3>
-                            Distance
-                        </h3>
+                        <h3>Distance (mm)</h3>
 
                         <canvas
                             id="tof-canvas"
                             width="512"
                             height="512">
-
                         </canvas>
 
-
-                        <div
-                            class="heatmap-legend distance-legend">
-
-                            <span>
-                                Near
-                            </span>
-
-                            <div class="legend-bar">
-                            </div>
-
-                            <span>
-                                Far
-                            </span>
-
+                        <div class="heatmap-legend">
+                            <span>Near</span>
+                            <div class="distance-gradient"></div>
+                            <span>Far</span>
                         </div>
-
                     </div>
 
-
-                    <!-- ================================================= -->
-                    <!-- Confidence Heatmap                                 -->
-                    <!-- ================================================= -->
-
                     <div class="heatmap-panel">
-
-                        <h3>
-                            Confidence
-                        </h3>
+                        <h3>Measurement Confidence (%)</h3>
 
                         <canvas
                             id="confidence-canvas"
                             width="512"
                             height="512">
-
                         </canvas>
 
-
-                        <div
-                            class="heatmap-legend confidence-legend">
-
-                            <span>
-                                Low
-                            </span>
-
-                            <div class="legend-bar">
-                            </div>
-
-                            <span>
-                                High
-                            </span>
-
+                        <div class="heatmap-legend">
+                            <span>Low</span>
+                            <div class="confidence-gradient"></div>
+                            <span>High</span>
                         </div>
-
                     </div>
-
 
                 </div>
 
+                <div class="heatmap-note">
+                    Red vertical lines indicate the three logical sector boundaries.
+                    Confidence is a measurement-quality score, not a calibrated probability.
+                </div>
             </div>
-
         </section>
 
-
-        <!-- ============================================================ -->
-        <!-- Observation JSON                                             -->
-        <!-- ============================================================ -->
+        <!-- ====================================================== -->
+        <!-- Observation JSON                                       -->
+        <!-- ====================================================== -->
 
         <section
-            class="card full-width"
+            class="card"
             id="json-card">
 
             <div class="card-header">
-
-                <h2>
-                    ToF Observation (JSON)
-                </h2>
-
+                <h2>ToF Observation (JSON)</h2>
             </div>
-
 
             <div class="card-body">
-
                 <pre id="observation-json">Waiting for observations...</pre>
-
             </div>
-
         </section>
 
-
-        <!-- ============================================================ -->
-        <!-- System Status                                                -->
-        <!-- ============================================================ -->
+        <!-- ====================================================== -->
+        <!-- System Status                                          -->
+        <!-- ====================================================== -->
 
         <section
             class="card"
             id="system-card">
 
             <div class="card-header">
-
-                <h2>
-                    System Status
-                </h2>
-
+                <h2>System Status</h2>
             </div>
-
 
             <div class="card-body">
-
                 <table class="info-table">
-
-
                     <tr>
-
-                        <td>
-                            Arduino Bridge
-                        </td>
-
-                        <td>
-
-                            <span id="bridge-status">
-                                WAITING
-                            </span>
-
-                        </td>
-
+                        <td>Arduino Bridge</td>
+                        <td><span id="bridge-status">WAITING</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Browser
-                        </td>
-
-                        <td>
-
-                            <span id="browser-status">
-                                DISCONNECTED
-                            </span>
-
-                        </td>
-
+                        <td>Browser</td>
+                        <td><span id="browser-status">DISCONNECTED</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            ToF Sensor
-                        </td>
-
-                        <td>
-
-                            <span id="tof-status">
-                                OFFLINE
-                            </span>
-
-                        </td>
-
+                        <td>ToF Sensor</td>
+                        <td><span id="tof-status">OFFLINE</span></td>
                     </tr>
 
-
                     <tr>
-
+                        <td>Observation History</td>
                         <td>
-                            Observation History
-                        </td>
-
-                        <td>
-
-                            <span id="history-size">
-                                0
-                            </span>
-
+                            <span id="history-size">0</span>
                             /
-
-                            <span id="history-capacity">
-                                20
-                            </span>
-
+                            <span id="history-capacity">20</span>
                         </td>
-
                     </tr>
-
-
                 </table>
-
             </div>
-
         </section>
 
-
-        <!-- ============================================================ -->
-        <!-- Debug Information                                            -->
-        <!-- ============================================================ -->
+        <!-- ====================================================== -->
+        <!-- Debug Information                                      -->
+        <!-- ====================================================== -->
 
         <section
             class="card"
             id="debug-card">
 
             <div class="card-header">
-
-                <h2>
-                    Debug Information
-                </h2>
-
+                <h2>Debug Information</h2>
             </div>
-
 
             <div class="card-body">
-
                 <table class="info-table">
-
-
                     <tr>
-
-                        <td>
-                            Dashboard Version
-                        </td>
-
-                        <td>
-
-                            <span id="dashboard-version">
-                                2.2.1
-                            </span>
-
-                        </td>
-
+                        <td>Dashboard Version</td>
+                        <td><span id="dashboard-version">2.3.0</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Backend Version
-                        </td>
-
-                        <td>
-
-                            <span id="backend-version">
-                                --
-                            </span>
-
-                        </td>
-
+                        <td>Backend Version</td>
+                        <td><span id="backend-version">--</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Last Update
-                        </td>
-
-                        <td>
-
-                            <span id="last-update">
-                                --
-                            </span>
-
-                        </td>
-
+                        <td>Last Update</td>
+                        <td><span id="last-update">--</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Messages Received
-                        </td>
-
-                        <td>
-
-                            <span id="message-count">
-                                0
-                            </span>
-
-                        </td>
-
+                        <td>Messages Received</td>
+                        <td><span id="message-count">0</span></td>
                     </tr>
 
-
                     <tr>
-
-                        <td>
-                            Observation Engine
-                        </td>
-
-                        <td>
-                            Temporal ToF + Confidence
-                        </td>
-
+                        <td>Observation Engine</td>
+                        <td>Temporal ToF + Confidence + Motion Persistence</td>
                     </tr>
-
-
                 </table>
-
             </div>
-
         </section>
-
 
     </main>
 
-
-    <!-- ================================================================ -->
-    <!-- Footer                                                           -->
-    <!-- ================================================================ -->
+    <!-- ========================================================== -->
+    <!-- Footer                                                     -->
+    <!-- ========================================================== -->
 
     <footer id="footer">
-
-        <div>
-            SixthSense
-        </div>
-
-        <div>
-            Arduino UNO Q
-        </div>
-
-        <div>
-            Temporal ToF + Confidence Engine
-        </div>
-
+        <div>SixthSense</div>
+        <div>Arduino UNO Q</div>
+        <div>Confidence-Aware Temporal ToF Observation + Motion Persistence Engine</div>
     </footer>
 
-
-    <!-- ================================================================ -->
-    <!-- JavaScript                                                       -->
-    <!-- ================================================================ -->
-
-    <script
-        src="app.js">
-    </script>
-
+    <script src="app.js"></script>
 
 </body>
-
 </html>

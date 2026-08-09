@@ -135,7 +135,7 @@ Current implementation provides:
 - Motion persistence visualization
 - Live structured JSON observation viewer
 
-https://github.com/user-attachments/assets/ef46a591-9836-4ce6-ab65-899850638ff6
+https://github.com/user-attachments/assets/4bd971f7-c2f7-41b0-82dd-f804ac0389fa
 
 ---
 
@@ -1197,6 +1197,8 @@ The **README** provides the high-level project overview.
 
 The `docs/` directory contains detailed design and release documentation.
 
+A dedicated v2.3.0 architecture document can be added alongside the earlier release documents as part of the release documentation.
+
 ---
 
 # Development
@@ -1249,40 +1251,40 @@ before being merged into `main`.
 # Release Evolution
 
 ```text
-v2.0.0
+     v2.0.0
 Static Observation
         │
         ▼
-v2.1.0
+     v2.1.0
 Temporal Observation
         │
         ▼
-v2.2.1
+     v2.2.1
 Confidence-Aware
 Temporal Observation
         │
         ▼
-v2.3.0
+     v2.3.0
 Motion Persistence
         │
         ▼
-v3.0.0
+     v3.0.0
 Multi-Sensor Perception
         │
         ▼
-v4.0.0
-Context
+     v4.0.0
+     Context
         │
         ▼
-v5.0.0
-Attention
+     v5.0.0
+    Attention
         │
         ▼
-v6.0.0
-Feedback
+     v6.0.0
+    Feedback
         │
         ▼
-v7.0.0
+     v7.0.0
 Complete Prototype
 ```
 
