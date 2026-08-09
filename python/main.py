@@ -4,7 +4,7 @@
 #
 # SixthSense
 #
-# Version : 2.2.1
+# Version : 2.3.0
 #
 # Module  : Python Backend
 #
@@ -18,6 +18,8 @@
 #   • Temporal history
 #   • Velocity estimation
 #   • Velocity smoothing
+#   • Motion classification
+#   • Motion persistence
 #   • Sensor initialization diagnostics
 #
 ###############################################################################
@@ -39,7 +41,7 @@ from arduino.app_bricks.web_ui import WebUI
 
 APP_NAME = "SixthSense"
 
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.3.0"
 
 
 ###############################################################################
@@ -95,6 +97,50 @@ VELOCITY_WINDOW = 5
 MIN_VALID_DT = 0.02
 
 STATIONARY_THRESHOLD = 50.0
+
+
+###############################################################################
+# Motion Classification Configuration
+###############################################################################
+
+MOTION_APPROACHING = "Approaching"
+
+MOTION_STATIONARY = "Stationary"
+
+MOTION_RECEDING = "Receding"
+
+MOTION_UNKNOWN = "Unknown"
+
+MOTION_STATES = (
+
+    MOTION_APPROACHING,
+
+    MOTION_STATIONARY,
+
+    MOTION_RECEDING
+
+)
+
+
+###############################################################################
+# Motion Persistence Configuration
+###############################################################################
+
+#
+# Motion persistence is a bounded evidence score.
+#
+# It is not a percentage.
+#
+# Range:
+#
+#     0 ... 100
+#
+
+MOTION_PERSISTENCE_MIN = 0
+
+MOTION_PERSISTENCE_MAX = 100
+
+MOTION_PERSISTENCE_STEP = 1
 
 
 ###############################################################################
@@ -218,7 +264,8 @@ class SectorObservation:
 
     confidence: float = 0.0
 
-    signal: int = 0
+    # VL53L5CX target return signal rate per SPAD.
+    signal_kcps_per_spad: int = 0
 
     sigma: int = 0
 
@@ -226,7 +273,8 @@ class SectorObservation:
 
     reflectance: int = 0
 
-    ambient: int = 0
+    # VL53L5CX ambient photon rate per SPAD.
+    ambient_kcps_per_spad: int = 0
 
     targets: int = 0
 
@@ -234,8 +282,41 @@ class SectorObservation:
 
     velocity_mmps: float = 0.0
 
-    persistence: float = 0.0
+    #
+    # True only when velocity is calculated from
+    # two valid trusted sector observations.
+    #
 
+    velocity_valid: bool = False
+
+    #
+    # Current velocity-derived motion classification.
+    #
+
+    velocity_state: str = MOTION_UNKNOWN
+
+    #
+    # Persistence score corresponding to the
+    # current velocity state.
+    #
+    # Example:
+    #
+    #     Velocity State     : Approaching
+    #     Motion Persistence : 80
+    #
+
+    motion_persistence: int = 0
+
+    #
+    # Internal persistence counters exposed for
+    # debugging and future reasoning layers.
+    #
+
+    approaching_persistence: int = 0
+
+    stationary_persistence: int = 0
+
+    receding_persistence: int = 0
 
 @dataclass
 class ToFObservation:
@@ -754,6 +835,218 @@ confidence_engine = ConfidenceEngine()
 
 
 ###############################################################################
+# Motion Persistence Engine
+###############################################################################
+
+class MotionPersistenceEngine:
+    """
+    Maintain independent bounded persistence counters
+    for Approaching, Stationary, and Receding motion.
+
+    Update rules:
+
+        Approaching:
+            Approaching += 1
+            Stationary  -= 1
+            Receding    -= 1
+
+        Stationary:
+            Approaching -= 1
+            Stationary  += 1
+            Receding    -= 1
+
+        Receding:
+            Approaching -= 1
+            Stationary  -= 1
+            Receding    += 1
+
+        Any other classification:
+            Approaching -= 1
+            Stationary  -= 1
+            Receding    -= 1
+
+    Every counter is saturated to the range 0 ... 100.
+
+    The score represents accumulated motion consistency.
+    It is not a percentage.
+    """
+
+    def __init__(
+        self
+    ):
+
+        self.counters = {
+
+            sector_id: {
+
+                MOTION_APPROACHING:
+                    0,
+
+                MOTION_STATIONARY:
+                    0,
+
+                MOTION_RECEDING:
+                    0
+
+            }
+
+            for sector_id in range(
+                TOF_SECTOR_COUNT
+            )
+
+        }
+
+    ###########################################################################
+    # Clamp Counter
+    ###########################################################################
+
+    @staticmethod
+    def _clamp(
+        value
+    ):
+
+        return max(
+
+            MOTION_PERSISTENCE_MIN,
+
+            min(
+
+                MOTION_PERSISTENCE_MAX,
+
+                int(
+                    value
+                )
+
+            )
+
+        )
+
+    ###########################################################################
+    # Update One Sector
+    ###########################################################################
+
+    def update(
+        self,
+        sector
+    ):
+
+        counters = self.counters[
+            sector.sector_id
+        ]
+
+        current_state = (
+            sector.velocity_state
+        )
+
+        #######################################################################
+        # Recognized motion state
+        #######################################################################
+
+        if current_state in MOTION_STATES:
+
+            for state in MOTION_STATES:
+
+                if state == current_state:
+
+                    counters[
+                        state
+                    ] = self._clamp(
+
+                        counters[
+                            state
+                        ]
+
+                        +
+
+                        MOTION_PERSISTENCE_STEP
+
+                    )
+
+                else:
+
+                    counters[
+                        state
+                    ] = self._clamp(
+
+                        counters[
+                            state
+                        ]
+
+                        -
+
+                        MOTION_PERSISTENCE_STEP
+
+                    )
+
+        #######################################################################
+        # Any other motion classification
+        #######################################################################
+
+        else:
+
+            for state in MOTION_STATES:
+
+                counters[
+                    state
+                ] = self._clamp(
+
+                    counters[
+                        state
+                    ]
+
+                    -
+
+                    MOTION_PERSISTENCE_STEP
+
+                )
+
+        #######################################################################
+        # Copy all counters into sector observation
+        #######################################################################
+
+        sector.approaching_persistence = (
+
+            counters[
+                MOTION_APPROACHING
+            ]
+
+        )
+
+        sector.stationary_persistence = (
+
+            counters[
+                MOTION_STATIONARY
+            ]
+
+        )
+
+        sector.receding_persistence = (
+
+            counters[
+                MOTION_RECEDING
+            ]
+
+        )
+
+        #######################################################################
+        # Persistence for current motion state
+        #######################################################################
+
+        if current_state in MOTION_STATES:
+
+            sector.motion_persistence = (
+
+                counters[
+                    current_state
+                ]
+
+            )
+
+        else:
+
+            sector.motion_persistence = 0
+
+###############################################################################
 # Observation Engine
 ###############################################################################
 
@@ -782,6 +1075,10 @@ class ObservationEngine:
             )
 
         }
+
+        self.motion_persistence_engine = (
+            MotionPersistenceEngine()
+        )
 
     ###########################################################################
     # Previous Observation
@@ -848,6 +1145,14 @@ class ObservationEngine:
             observation
         )
 
+        self._classify_motion(
+            observation
+        )
+
+        self._update_motion_persistence(
+            observation
+        )
+
         self.observation_history.append(
             observation
         )
@@ -871,7 +1176,19 @@ class ObservationEngine:
             self.previous_observation()
         )
 
+        #######################################################################
+        # First observation
+        #
+        # Velocity cannot be calculated without a previous observation.
+        #######################################################################
+
         if previous is None:
+
+            for sector in observation.sectors:
+
+                sector.velocity_mmps = 0.0
+
+                sector.velocity_valid = False
 
             return
 
@@ -900,6 +1217,13 @@ class ObservationEngine:
 
         ):
 
+            ###################################################################
+            # Invalid measurement transition
+            #
+            # Confidence is used as a validity gate exactly as in v2.2.1.
+            # An invalid transition does not create a valid velocity sample.
+            ###################################################################
+
             if (
 
                 current.distance_mm <= 0
@@ -918,21 +1242,33 @@ class ObservationEngine:
 
             ):
 
-                velocity = 0.0
+                current.velocity_mmps = 0.0
 
-            else:
+                current.velocity_valid = False
 
-                velocity = (
+                continue
 
-                    current.distance_mm
+            ###################################################################
+            # Valid instantaneous velocity
+            ###################################################################
 
-                    -
+            velocity = (
 
-                    old.distance_mm
+                current.distance_mm
 
-                ) / dt
+                -
+
+                old.distance_mm
+
+            ) / dt
 
             current.velocity_mmps = velocity
+
+            current.velocity_valid = True
+
+            ###################################################################
+            # Only valid velocity samples enter the smoothing history.
+            ###################################################################
 
             self.velocity_history[
                 current.sector_id
@@ -950,6 +1286,17 @@ class ObservationEngine:
     ):
 
         for sector in observation.sectors:
+
+            #
+            # Do not use the stored velocity history when the
+            # current velocity transition itself is invalid.
+            #
+
+            if not sector.velocity_valid:
+
+                sector.velocity_mmps = 0.0
+
+                continue
 
             history = self.velocity_history[
                 sector.sector_id
@@ -975,6 +1322,93 @@ class ObservationEngine:
 
                 1
 
+            )
+
+    ###########################################################################
+    # Motion Classification
+    ###########################################################################
+
+    def _classify_motion(
+        self,
+        observation
+    ):
+
+        for sector in observation.sectors:
+
+            ###################################################################
+            # Invalid or unavailable velocity
+            #
+            # A numerical zero caused by an invalid transition is not treated
+            # as Stationary. It becomes Unknown.
+            ###################################################################
+
+            if not sector.velocity_valid:
+
+                sector.velocity_state = (
+                    MOTION_UNKNOWN
+                )
+
+                continue
+
+            ###################################################################
+            # Approaching
+            ###################################################################
+
+            if (
+
+                sector.velocity_mmps
+
+                <
+
+                -STATIONARY_THRESHOLD
+
+            ):
+
+                sector.velocity_state = (
+                    MOTION_APPROACHING
+                )
+
+            ###################################################################
+            # Receding
+            ###################################################################
+
+            elif (
+
+                sector.velocity_mmps
+
+                >
+
+                STATIONARY_THRESHOLD
+
+            ):
+
+                sector.velocity_state = (
+                    MOTION_RECEDING
+                )
+
+            ###################################################################
+            # Stationary
+            ###################################################################
+
+            else:
+
+                sector.velocity_state = (
+                    MOTION_STATIONARY
+                )
+
+    ###########################################################################
+    # Motion Persistence
+    ###########################################################################
+
+    def _update_motion_persistence(
+        self,
+        observation
+    ):
+
+        for sector in observation.sectors:
+
+            self.motion_persistence_engine.update(
+                sector
             )
 
 
@@ -1037,26 +1471,6 @@ def log_observation(
 
     for sector in observation.sectors:
 
-        if (
-            sector.velocity_mmps
-            <
-            -STATIONARY_THRESHOLD
-        ):
-
-            state = "Approaching"
-
-        elif (
-            sector.velocity_mmps
-            >
-            STATIONARY_THRESHOLD
-        ):
-
-            state = "Receding"
-
-        else:
-
-            state = "Stationary"
-
         print(
 
             sector.sector_name,
@@ -1081,9 +1495,9 @@ def log_observation(
 
             sector.target_status,
 
-            "| Signal:",
+            "| Signal (kcps/SPAD):",
 
-            sector.signal,
+            sector.signal_kcps_per_spad,
 
             "| Sigma:",
 
@@ -1098,9 +1512,39 @@ def log_observation(
 
             "mm/s",
 
-            "|",
+            "| Velocity State:",
 
-            state
+            sector.velocity_state,
+
+            "| Motion Persistence:",
+
+            sector.motion_persistence,
+
+            "| Counters A/S/R:",
+
+            str(
+                sector.approaching_persistence
+            )
+
+            +
+
+            "/"
+
+            +
+
+            str(
+                sector.stationary_persistence
+            )
+
+            +
+
+            "/"
+
+            +
+
+            str(
+                sector.receding_persistence
+            )
 
         )
 
@@ -1908,7 +2352,7 @@ def build_sector_observation(
 
             ),
 
-        signal=
+        signal_kcps_per_spad=
             int(
 
                 frame.signal[
@@ -1948,7 +2392,7 @@ def build_sector_observation(
 
             ),
 
-        ambient=
+        ambient_kcps_per_spad=
             int(
 
                 frame.ambient[
@@ -2044,33 +2488,6 @@ def build_sector_observations(
 
 
 ###############################################################################
-# Dashboard Helpers
-###############################################################################
-
-def velocity_state(
-    velocity
-):
-
-    if (
-        velocity
-        <
-        -STATIONARY_THRESHOLD
-    ):
-
-        return "Approaching"
-
-    if (
-        velocity
-        >
-        STATIONARY_THRESHOLD
-    ):
-
-        return "Receding"
-
-    return "Stationary"
-
-
-###############################################################################
 # Serialization
 ###############################################################################
 
@@ -2098,8 +2515,8 @@ def sector_to_dict(
                 1
             ),
 
-        "signal":
-            sector.signal,
+        "signal_kcps_per_spad":
+            sector.signal_kcps_per_spad,
 
         "sigma":
             sector.sigma,
@@ -2110,8 +2527,8 @@ def sector_to_dict(
         "reflectance":
             sector.reflectance,
 
-        "ambient":
-            sector.ambient,
+        "ambient_kcps_per_spad":
+            sector.ambient_kcps_per_spad,
 
         "targets":
             sector.targets,
@@ -2125,13 +2542,27 @@ def sector_to_dict(
                 1
             ),
 
-        "velocity_state":
-            velocity_state(
-                sector.velocity_mmps
-            ),
+        "velocity_valid":
+            sector.velocity_valid,
 
-        "persistence":
-            sector.persistence
+        "velocity_state":
+            sector.velocity_state,
+
+        "motion_persistence":
+            sector.motion_persistence,
+
+        "motion_persistence_counters": {
+
+            "approaching":
+                sector.approaching_persistence,
+
+            "stationary":
+                sector.stationary_persistence,
+
+            "receding":
+                sector.receding_persistence
+
+        }
 
     }
 
@@ -2503,6 +2934,28 @@ print(
 
 print(
     "Velocity Smoothing Enabled"
+)
+
+print(
+    "Motion Classification Enabled"
+)
+
+print(
+    "Motion Persistence Engine Enabled"
+)
+
+print()
+
+print(
+    "Motion Persistence Range :",
+    MOTION_PERSISTENCE_MIN,
+    "...",
+    MOTION_PERSISTENCE_MAX
+)
+
+print(
+    "Motion Persistence Step  :",
+    MOTION_PERSISTENCE_STEP
 )
 
 print()
