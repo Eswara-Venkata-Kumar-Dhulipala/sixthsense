@@ -5,6 +5,1739 @@ All notable changes to this project will be documented in this file.
 The format is inspired by **Keep a Changelog**, and the project follows **Semantic Versioning**.
 
 ---
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is inspired by **Keep a Changelog**, and the project follows **Semantic Versioning**.
+
+---
+
+# [2.3.0] - 2026-08-09
+
+## Overview
+
+Version **2.3.0** introduces the **Persistent ToF Observation Engine**, extending the Confidence-Aware Temporal ToF Observation Engine introduced in v2.2.1.
+
+The major capability added in this release is the **Motion Persistence Engine**.
+
+SixthSense can now preserve bounded temporal evidence for the three velocity-derived motion classifications:
+
+```text
+Approaching
+Stationary
+Receding
+```
+
+rather than reporting only the current instantaneous velocity state.
+
+This release introduces:
+
+- Explicit velocity validity
+- `Unknown` velocity state for unavailable velocity
+- Valid-only velocity smoothing
+- Motion Persistence Engine
+- Independent Approaching / Stationary / Receding persistence counters
+- Bounded persistence range from `0` to `100`
+- General decay behavior for `Unknown` or other classifications
+- Motion persistence in structured `SectorObservation` output
+- Motion persistence counter diagnostics in JSON
+- Updated sector cards with **Velocity State**
+- Updated dashboard with **Motion Persistence**
+- Clearer public sensor-quality field names
+- Updated v2.3.0 README and Software Architecture & Design documentation
+
+The release preserves the existing **Observation-First Architecture** and all v2.2.1 confidence-aware sensing capabilities.
+
+The Persistence Engine operates on velocity classifications and intentionally does **not** implement object identity tracking, obstacle-presence probability, or statistical persistence probability.
+
+---
+
+## Added
+
+### Motion Persistence Engine
+
+Added a dedicated Python-side `MotionPersistenceEngine`.
+
+The engine maintains independent bounded temporal evidence for:
+
+```text
+Approaching
+Stationary
+Receding
+```
+
+for every logical sector.
+
+Each sector therefore owns three counters:
+
+```text
+Approaching Persistence
+Stationary Persistence
+Receding Persistence
+```
+
+The counters are initialized to:
+
+```text
+0
+```
+
+and constrained to:
+
+```text
+0 ... 100
+```
+
+Configuration:
+
+```text
+MOTION_PERSISTENCE_MIN  = 0
+MOTION_PERSISTENCE_MAX  = 100
+MOTION_PERSISTENCE_STEP = 1
+```
+
+The Persistence Engine is executed after velocity-state classification.
+
+The v2.3.0 temporal pipeline is:
+
+```text
+Sector Observation
+        │
+        ▼
+Velocity Estimation
+        │
+        ▼
+Velocity Smoothing
+        │
+        ▼
+Velocity State Classification
+        │
+        ▼
+Motion Persistence Engine
+        │
+        ▼
+ToFObservation
+```
+
+---
+
+### Persistence Update Rules
+
+Added deterministic counter reinforcement and decay rules.
+
+#### Approaching
+
+When:
+
+```text
+velocity_state = Approaching
+```
+
+the counters are updated as:
+
+```text
+Approaching += 1
+Stationary  -= 1
+Receding    -= 1
+```
+
+#### Stationary
+
+When:
+
+```text
+velocity_state = Stationary
+```
+
+the counters are updated as:
+
+```text
+Approaching -= 1
+Stationary  += 1
+Receding    -= 1
+```
+
+#### Receding
+
+When:
+
+```text
+velocity_state = Receding
+```
+
+the counters are updated as:
+
+```text
+Approaching -= 1
+Stationary  -= 1
+Receding    += 1
+```
+
+#### Unknown / Other
+
+For any classification outside:
+
+```text
+Approaching
+Stationary
+Receding
+```
+
+all recognized counters decay:
+
+```text
+Approaching -= 1
+Stationary  -= 1
+Receding    -= 1
+```
+
+Every counter update is saturated to:
+
+```text
+0 ... 100
+```
+
+---
+
+### Current-State Motion Persistence
+
+Added:
+
+```text
+motion_persistence
+```
+
+to each sector observation.
+
+The published value corresponds to the counter for the **current recognized velocity state**.
+
+Example:
+
+```text
+Velocity State     = Approaching
+
+Approaching counter = 80
+Stationary counter  = 3
+Receding counter    = 0
+```
+
+The sector publishes:
+
+```text
+Motion Persistence = 80
+```
+
+If the velocity state is:
+
+```text
+Unknown
+```
+
+the published current-state persistence is:
+
+```text
+motion_persistence = 0
+```
+
+while the internal recognized-state counters decay.
+
+---
+
+### Motion Persistence Counter Diagnostics
+
+Added all three internal persistence counters to structured JSON output.
+
+Example:
+
+```json
+"motion_persistence": 100,
+"motion_persistence_counters": {
+    "approaching": 0,
+    "stationary": 100,
+    "receding": 0
+}
+```
+
+These counters are exposed for:
+
+- Validation
+- Debugging
+- Transition analysis
+- Future Context Engine integration
+- Future persistence tuning
+
+The dashboard sector cards display only the current:
+
+```text
+Motion Persistence
+```
+
+value to avoid unnecessary UI clutter.
+
+---
+
+### Explicit Velocity Validity
+
+Added:
+
+```text
+velocity_valid
+```
+
+to `SectorObservation`.
+
+A velocity is considered valid only when the current and previous sector observations both contain usable trusted measurements.
+
+The current validity gate requires:
+
+```text
+current.distance_mm > 0
+previous.distance_mm > 0
+current.confidence > 0
+previous.confidence > 0
+```
+
+A valid velocity is represented as:
+
+```text
+velocity_valid = true
+```
+
+An unavailable velocity is represented as:
+
+```text
+velocity_valid = false
+```
+
+This distinguishes:
+
+```text
+velocity_mmps = 0.0
+velocity_valid = true
+```
+
+from:
+
+```text
+velocity_mmps = 0.0
+velocity_valid = false
+```
+
+The first case represents a valid near-zero range velocity.
+
+The second case represents an unavailable velocity calculation.
+
+---
+
+### `Unknown` Velocity State
+
+Added:
+
+```text
+Unknown
+```
+
+as an explicit velocity state.
+
+The recognized states are now:
+
+```text
+Approaching
+Stationary
+Receding
+Unknown
+```
+
+When:
+
+```text
+velocity_valid = false
+```
+
+the velocity state becomes:
+
+```text
+Unknown
+```
+
+rather than interpreting the placeholder numerical velocity:
+
+```text
+0.0
+```
+
+as:
+
+```text
+Stationary
+```
+
+This prevents invalid measurement transitions from artificially strengthening Stationary motion persistence.
+
+---
+
+### Valid-Only Velocity Smoothing
+
+Changed the velocity smoothing input so that only valid calculated velocity samples enter the per-sector history.
+
+Each sector continues to use:
+
+```text
+VELOCITY_WINDOW = 5
+```
+
+but an invalid transition now performs:
+
+```text
+velocity_mmps = 0.0
+velocity_valid = false
+```
+
+without appending that placeholder zero to the smoothing history.
+
+This prevents unavailable velocity values from biasing the moving average toward zero.
+
+The current implementation does **not** explicitly clear previously stored valid velocity samples when an invalid transition occurs.
+
+The current invalid frame does not use the stored smoothed value, but older valid samples remain in the deque and can contribute after valid velocity processing resumes.
+
+---
+
+### Motion Classification Constants
+
+Added explicit motion-state constants:
+
+```text
+MOTION_APPROACHING
+MOTION_STATIONARY
+MOTION_RECEDING
+MOTION_UNKNOWN
+```
+
+and the recognized-state collection:
+
+```text
+MOTION_STATES
+```
+
+This centralizes velocity-state semantics and provides a stable input contract for the Persistence Engine.
+
+---
+
+### Extended `SectorObservation`
+
+Extended `SectorObservation` with temporal-state fields.
+
+The v2.3.0 sector model includes:
+
+```text
+velocity_mmps
+velocity_valid
+velocity_state
+
+motion_persistence
+
+approaching_persistence
+stationary_persistence
+receding_persistence
+```
+
+The three per-state persistence values are maintained internally and serialized through:
+
+```text
+motion_persistence_counters
+```
+
+---
+
+### Motion Persistence Dashboard Display
+
+Added Motion Persistence to every sector card.
+
+Each sector now displays:
+
+```text
+Distance
+Confidence
+Zone
+Velocity
+Velocity State
+Motion Persistence
+```
+
+Example:
+
+```text
+Distance             617 mm
+Confidence            81.3 % HIGH
+Zone                  63
+Velocity              -5.0 mm/s
+Velocity State        Stationary
+Motion Persistence    100
+```
+
+Motion Persistence is intentionally displayed **without a percentage symbol**.
+
+---
+
+### `Unknown` Dashboard Presentation
+
+Added dashboard handling for:
+
+```text
+Unknown
+```
+
+velocity state.
+
+Unknown velocity is presented as a neutral state rather than being displayed as Stationary.
+
+When:
+
+```text
+velocity_valid = false
+```
+
+the dashboard can avoid presenting the placeholder zero as a valid physical velocity.
+
+---
+
+### Explicit Public Signal Naming
+
+Improved public sector-observation field names for VL53L5CX SPAD-normalized rates.
+
+Changed:
+
+```text
+signal
+```
+
+to:
+
+```text
+signal_kcps_per_spad
+```
+
+and:
+
+```text
+ambient
+```
+
+to:
+
+```text
+ambient_kcps_per_spad
+```
+
+in the public sector observation interface.
+
+This makes the meaning and units of these sensor-quality fields more explicit.
+
+The lower-level `ToFFrame` and Arduino Bridge interfaces continue to use their existing internal names.
+
+---
+
+### v2.3.0 Software Architecture Documentation
+
+Added:
+
+```text
+docs/SixthSense_v2.3.0.md
+```
+
+documenting:
+
+- Persistent ToF Observation Engine architecture
+- Velocity validity
+- Valid-only velocity smoothing
+- Velocity-state classification
+- Motion Persistence Engine
+- Persistence counter model
+- Persistence update rules
+- Unknown-state handling
+- Confidence-to-persistence relationship
+- Sector-level persistence semantics
+- Observation-based persistence
+- Runtime architecture
+- Data models
+- Public observation schema
+- Validation strategy
+- Design decisions
+- Trade-offs
+- Known limitations
+- Future multi-sensor evolution
+
+---
+
+### Updated Project README
+
+Updated the project README for:
+
+```text
+v2.3.0 — Persistent ToF Observation Engine
+```
+
+The README now describes:
+
+- Motion persistence
+- Velocity validity
+- Unknown velocity state
+- Per-state persistence counters
+- Updated processing pipeline
+- Updated dashboard
+- Updated structured JSON
+- Updated roadmap
+- Updated current capabilities
+- Updated limitations
+- Multi-ToF integration as the next major milestone
+
+---
+
+## Changed
+
+### Temporal Observation Pipeline
+
+Changed the temporal processing pipeline from:
+
+```text
+Velocity Estimation
+        │
+        ▼
+Velocity Smoothing
+        │
+        ▼
+Motion Classification
+        │
+        ▼
+Observation History
+```
+
+to:
+
+```text
+Velocity Estimation
+        │
+        ▼
+Velocity Smoothing
+        │
+        ▼
+Velocity State Classification
+        │
+        ▼
+Motion Persistence
+        │
+        ▼
+Observation History
+```
+
+Persistence is therefore calculated from the finalized current velocity classification before the observation is stored in temporal history.
+
+---
+
+### Velocity Processing
+
+Changed invalid velocity handling.
+
+Previously, an invalid current/previous measurement transition could produce:
+
+```text
+velocity = 0.0
+```
+
+which could enter the velocity smoothing history.
+
+Version 2.3.0 now distinguishes:
+
+```text
+velocity_mmps
+```
+
+from:
+
+```text
+velocity_valid
+```
+
+and only valid calculated velocity samples are appended to the velocity history.
+
+---
+
+### Motion State Terminology
+
+Standardized the public classification field as:
+
+```text
+velocity_state
+```
+
+and the dashboard label as:
+
+```text
+Velocity State
+```
+
+instead of the generic dashboard label:
+
+```text
+State
+```
+
+This makes it explicit that:
+
+```text
+Approaching
+Stationary
+Receding
+Unknown
+```
+
+are derived from relative velocity.
+
+---
+
+### Persistence Terminology
+
+Replaced the generic persistence concept with the explicit field:
+
+```text
+motion_persistence
+```
+
+The generic:
+
+```text
+persistence
+```
+
+field is no longer required in the final v2.3.0 public observation schema.
+
+This avoids ambiguity between:
+
+- Motion persistence
+- Object persistence
+- Occupancy persistence
+- Measurement persistence
+
+---
+
+### Observation JSON
+
+Changed the public sector JSON toward the v2.3.0 schema.
+
+Example:
+
+```json
+{
+    "sector_id": 0,
+    "sector_name": "Sector 0",
+    "distance_mm": 617,
+    "zone_id": 63,
+    "confidence": 81.3,
+    "signal_kcps_per_spad": 121,
+    "sigma": 6,
+    "target_status": 5,
+    "reflectance": 115,
+    "ambient_kcps_per_spad": 127,
+    "targets": 1,
+    "spads": 4096,
+    "velocity_mmps": -5.0,
+    "velocity_valid": true,
+    "velocity_state": "Stationary",
+    "motion_persistence": 100,
+    "motion_persistence_counters": {
+        "approaching": 0,
+        "stationary": 100,
+        "receding": 0
+    }
+}
+```
+
+Removed the need for duplicate public fields such as:
+
+```text
+motion_state
+persistence
+```
+
+when the same information is already represented by:
+
+```text
+velocity_state
+motion_persistence
+```
+
+---
+
+### Dashboard
+
+Updated the dashboard version to:
+
+```text
+v2.3.0
+```
+
+and extended the three sector cards with:
+
+```text
+Motion Persistence
+```
+
+Changed the card label:
+
+```text
+State
+```
+
+to:
+
+```text
+Velocity State
+```
+
+The existing:
+
+- Sensor information
+- Distance heatmap
+- Confidence heatmap
+- Observation history
+- JSON viewer
+- System status
+- Debug information
+
+remain part of the dashboard.
+
+---
+
+### Roadmap
+
+Updated the roadmap to mark the persistence milestone complete.
+
+Previous:
+
+```text
+v2.3.0
+Persistent ToF Observation Engine
+        🚧
+```
+
+Current:
+
+```text
+v2.3.0
+Persistent ToF Observation Engine
+        ✅
+```
+
+The next major milestone is now:
+
+```text
+v3.0.0
+Multi-ToF Sensor Integration
+```
+
+---
+
+### Persistence Definition
+
+Refined the meaning of persistence from a generic future obstacle-presence concept to the actual v2.3.0 implementation:
+
+```text
+Temporal consistency of velocity classification
+within each logical sector
+```
+
+Version 2.3.0 does **not** claim:
+
+```text
+same physical object persistence
+```
+
+or:
+
+```text
+persistent obstacle identity
+```
+
+---
+
+## Fixed
+
+### Invalid Zero Velocity Interpretation
+
+Fixed the semantic ambiguity where an unavailable velocity could be numerically represented as:
+
+```text
+0.0
+```
+
+and therefore appear equivalent to genuine Stationary motion.
+
+Version 2.3.0 adds:
+
+```text
+velocity_valid
+```
+
+so unavailable velocity becomes:
+
+```text
+Unknown
+```
+
+instead.
+
+---
+
+### Invalid Velocity Smoothing Bias
+
+Fixed invalid placeholder zero velocities entering the smoothing history.
+
+Previously:
+
+```text
+valid approaching samples
++
+invalid 0.0
+```
+
+could reduce the magnitude of the smoothed velocity.
+
+Version 2.3.0 only appends valid calculated velocity samples.
+
+---
+
+### Persistence Strengthening from Invalid Velocity
+
+Prevented invalid/unavailable velocity from strengthening:
+
+```text
+Stationary
+```
+
+persistence.
+
+The new flow is:
+
+```text
+Invalid velocity
+       │
+       ▼
+velocity_valid = false
+       │
+       ▼
+velocity_state = Unknown
+       │
+       ▼
+A -1
+S -1
+R -1
+```
+
+---
+
+### Ambiguous Persistence Field
+
+Removed the need to expose both:
+
+```text
+motion_persistence
+```
+
+and:
+
+```text
+persistence
+```
+
+for the same value.
+
+The v2.3.0 public interface uses:
+
+```text
+motion_persistence
+```
+
+only.
+
+---
+
+### Duplicate Motion-State Naming
+
+Removed the need to expose both:
+
+```text
+velocity_state
+```
+
+and:
+
+```text
+motion_state
+```
+
+for the same classification.
+
+The final public terminology is:
+
+```text
+velocity_state
+```
+
+---
+
+### Dashboard State Label
+
+Changed the ambiguous:
+
+```text
+State
+```
+
+label to:
+
+```text
+Velocity State
+```
+
+to clearly identify the origin of the classification.
+
+---
+
+### Sensor-Quality Field Naming
+
+Improved the public JSON names:
+
+```text
+signal
+ambient
+```
+
+to:
+
+```text
+signal_kcps_per_spad
+ambient_kcps_per_spad
+```
+
+to better communicate the meaning of the values.
+
+---
+
+## Performance
+
+### Persistence Engine Complexity
+
+Motion persistence is calculated for:
+
+```text
+3 sectors
+```
+
+with:
+
+```text
+3 counters per sector
+```
+
+for each processed observation.
+
+The work per update is therefore approximately:
+
+```text
+3 sectors × 3 bounded counter updates
+```
+
+and is negligible relative to RouterBridge communication overhead.
+
+---
+
+### Velocity Smoothing
+
+Each sector continues to use a maximum of:
+
+```text
+5 valid velocity samples
+```
+
+for moving-average smoothing.
+
+Invalid samples are excluded from the history.
+
+---
+
+### Observation History
+
+The Observation Engine continues to retain:
+
+```text
+20 ToFObservation objects
+```
+
+for temporal processing.
+
+---
+
+### Sensor Acquisition Rate
+
+The VL53L5CX continues to operate at:
+
+```text
+15 Hz
+```
+
+with:
+
+```text
+20 ms
+```
+
+integration time.
+
+---
+
+### Python Observation Rate
+
+The effective Python observation rate remains lower than the configured sensor ranging rate because a snapshot requires multiple RouterBridge operations.
+
+The Persistence Engine operates at the **processed observation rate**, not directly at 15 Hz.
+
+---
+
+### Persistence Is Observation-Based
+
+Persistence increments or decrements once for every processed observation.
+
+Therefore:
+
+```text
+Motion Persistence = 100
+```
+
+does not represent:
+
+```text
+100 seconds
+```
+
+or:
+
+```text
+100%
+```
+
+At approximately:
+
+```text
+5 observations / second
+```
+
+100 consecutive reinforcing observations require approximately:
+
+```text
+20 seconds
+```
+
+At approximately:
+
+```text
+6 observations / second
+```
+
+the same counter saturation requires approximately:
+
+```text
+16.7 seconds
+```
+
+No time normalization is implemented in v2.3.0.
+
+---
+
+## Data Retention
+
+### Arduino Sensor Data
+
+Arduino storage remains unchanged.
+
+The MCU retains:
+
+```text
+Latest LIVE frame
++
+Latest SNAPSHOT frame
+```
+
+No Arduino-side historical frame queue is introduced by v2.3.0.
+
+---
+
+### Python Observation History
+
+Python continues to store:
+
+```text
+20 ToFObservation objects
+```
+
+in memory.
+
+---
+
+### Velocity History
+
+Python stores up to:
+
+```text
+5 valid velocity samples
+```
+
+per sector.
+
+Invalid placeholder zero velocities are not added.
+
+Existing valid velocity history is currently retained across invalid transitions.
+
+---
+
+### Motion Persistence State
+
+Added in-memory persistence state:
+
+```text
+3 motion counters
+×
+3 sectors
+=
+9 counters
+```
+
+These counters are maintained for the lifetime of the running application.
+
+---
+
+### Persistent Storage
+
+Version 2.3.0 does not write persistence or sensor history to:
+
+- CSV
+- JSON files
+- SQLite
+- Database
+- Cloud storage
+- Long-term local storage
+
+All temporal state is reset when the application restarts.
+
+---
+
+## Compatibility
+
+### Hardware
+
+Version 2.3.0 remains compatible with the current prototype hardware:
+
+- Arduino UNO Q
+- SparkFun VL53L5CX Time-of-Flight Sensor
+- Qwiic / I²C interface
+- USB-C connection
+
+No hardware changes are required for the Motion Persistence Engine.
+
+---
+
+### Arduino Firmware
+
+No persistence-specific change is required to the Arduino sketch.
+
+The existing v2.2.1 snapshot and RouterBridge interfaces remain sufficient because motion persistence is derived entirely from Python-side temporal observations.
+
+---
+
+### Sensor Configuration
+
+| Parameter | Value |
+|-----------|------:|
+| Resolution | 8 × 8 |
+| Number of Zones | 64 |
+| Ranging Frequency | 15 Hz |
+| Integration Time | 20 ms |
+| Target Order | Closest |
+| Target Index | 0 |
+| I²C Address | `0x29` |
+| I²C Clock | 400 kHz |
+
+---
+
+### Software
+
+The release continues to use:
+
+- Arduino App Lab
+- Arduino RouterBridge
+- SparkFun VL53L5CX Arduino Library
+- Python
+- NumPy
+- Arduino App Lab WebUI
+- HTML
+- CSS
+- JavaScript
+- Socket.IO
+
+---
+
+## Known Limitations
+
+### Single ToF Sensor
+
+The current prototype still uses:
+
+```text
+1 × VL53L5CX
+```
+
+Multi-ToF integration is planned for v3.0.0.
+
+---
+
+### Motion Persistence Is Not Object Tracking
+
+The Persistence Engine maintains:
+
+```text
+velocity-state consistency per sector
+```
+
+It does not maintain:
+
+```text
+physical object identity
+```
+
+Two different objects observed successively inside the same sector can therefore contribute to the same sector persistence state.
+
+---
+
+### Zone Changes Do Not Reset Persistence
+
+Persistence is indexed by:
+
+```text
+sector_id
+```
+
+rather than:
+
+```text
+zone_id
+```
+
+A change in the nearest trusted source zone within the same logical sector does not automatically reset persistence.
+
+---
+
+### Persistence Is Not Probability
+
+A value such as:
+
+```text
+Motion Persistence = 80
+```
+
+does not mean:
+
+```text
+80% probability
+```
+
+The score is a bounded temporal evidence counter.
+
+---
+
+### Persistence Is Not Time-Normalized
+
+Counter evolution depends on the effective Python observation-processing rate.
+
+---
+
+### Velocity Is Relative Range Change
+
+Velocity continues to represent:
+
+```text
+change in measured sensor-to-obstacle distance
+```
+
+rather than a complete object velocity vector.
+
+---
+
+### Velocity History Across Invalid Gaps
+
+Invalid velocity samples are excluded from smoothing.
+
+However, previously stored valid velocity samples are not explicitly cleared by an invalid transition in the current implementation.
+
+They can therefore contribute when valid velocity processing resumes.
+
+---
+
+### Heuristic Confidence
+
+The Confidence Engine remains an engineering measurement-quality model rather than a statistically calibrated probability model.
+
+---
+
+### Single Target Per Zone
+
+The current implementation continues to use:
+
+```text
+TARGET_INDEX = 0
+```
+
+with closest-target ordering.
+
+---
+
+### Raw Frame Retention
+
+Not every sensor frame produced at 15 Hz is retained or processed by Python.
+
+---
+
+### Persistent Storage
+
+Persistence counters and observation histories are stored only in memory.
+
+---
+
+### Snapshot Locking
+
+The snapshot-copy architecture still does not use an explicit mutex around live-buffer update and snapshot-copy operations.
+
+---
+
+## Validation
+
+Version 2.3.0 has been validated through live operation of the SixthSense dashboard and structured observations.
+
+Validated functionality includes:
+
+- VL53L5CX initialization
+- Continuous 8×8 ranging
+- Snapshot-based Bridge transport
+- 64-zone confidence calculation
+- Confidence-aware sector selection
+- Relative velocity estimation
+- Explicit velocity validity
+- Valid near-zero velocity handling
+- `Unknown` velocity state
+- Valid-only velocity smoothing
+- Approaching classification
+- Stationary classification
+- Receding classification
+- Motion Persistence Engine updates
+- Approaching persistence counter
+- Stationary persistence counter
+- Receding persistence counter
+- Counter floor at `0`
+- Counter saturation at `100`
+- Per-sector persistence independence
+- Motion persistence in JSON output
+- Velocity State dashboard display
+- Motion Persistence dashboard display
+- Distance heatmap
+- Confidence heatmap
+- Live structured JSON observations
+- Backend version display
+- Dashboard version display
+
+Recommended regression cases include:
+
+```text
+Continuous Approaching
+Continuous Stationary
+Continuous Receding
+Single-state glitch
+Sustained A → S transition
+Sustained A → R transition
+Unknown / invalid velocity
+Counter saturation
+Counter floor
+Cross-sector independence
+Zone change within same sector
+Recovery after invalid measurement
+```
+
+---
+
+## Architectural Evolution
+
+The Observation Engine has now evolved through four major stages.
+
+### v2.0.0
+
+```text
+Raw Distance
+    │
+    ▼
+Sector Distance
+    │
+    ▼
+Static Observation
+```
+
+---
+
+### v2.1.0
+
+```text
+Raw Distance
+    │
+    ▼
+Sector Observation
+    │
+    ▼
+Observation History
+    │
+    ▼
+Relative Velocity
+    │
+    ▼
+Motion State
+```
+
+---
+
+### v2.2.1
+
+```text
+Complete VL53L5CX Measurement
+             │
+             ▼
+      Confidence Engine
+             │
+             ▼
+     Confidence Image
+             │
+             ▼
+      Trusted Zones
+             │
+             ▼
+Nearest Trusted Sector Measurement
+             │
+             ▼
+      Temporal History
+             │
+             ▼
+     Relative Velocity
+             │
+             ▼
+        Motion State
+```
+
+---
+
+### v2.3.0
+
+```text
+Complete VL53L5CX Measurement
+             │
+             ▼
+      Confidence Engine
+             │
+             ▼
+      Trusted Measurement
+             │
+             ▼
+ Confidence-Aware Sector
+             │
+             ▼
+     Relative Velocity
+             │
+             ▼
+     Velocity Validity
+             │
+             ▼
+     Velocity Smoothing
+             │
+             ▼
+       Velocity State
+             │
+             ▼
+  Motion Persistence Engine
+             │
+             ▼
+      ToFObservation
+```
+
+Version 2.3.0 therefore represents the transition from:
+
+```text
+Confidence-aware current-state perception
+```
+
+to:
+
+```text
+Confidence-aware temporal perception
+with bounded motion-state memory
+```
+
+---
+
+## Next Milestone
+
+The next planned major capability is:
+
+# **v3.0.0 — Multi-ToF Sensor Integration**
+
+The objective is to scale the Observation-First Architecture from:
+
+```text
+1 ToF sensor
+```
+
+toward:
+
+```text
+Multiple independent ToF sensing directions
+```
+
+while preserving a consistent structured observation interface.
+
+The planned progression is:
+
+```text
+v2.0.0
+Static ToF Observation Engine
+        │
+        ▼
+v2.1.0
+Temporal ToF Observation Engine
+        │
+        ▼
+v2.2.1
+Confidence-Aware Temporal
+ToF Observation Engine
+        │
+        ▼
+v2.3.0
+Persistent ToF Observation Engine
+        │
+        ▼
+v3.0.0
+Multi-ToF Sensor Integration
+        │
+        ▼
+v4.0.0
+Context Engine
+        │
+        ▼
+v5.0.0
+Attention Engine
+        │
+        ▼
+v6.0.0
+Feedback Engine
+        │
+        ▼
+v7.0.0
+Complete SixthSense Prototype
+```
+
+---
+
+## Release Summary
+
+Version **2.3.0** introduces temporal memory for SixthSense velocity classifications.
+
+The current perception pipeline is:
+
+```text
+VL53L5CX
+    │
+    ▼
+15 Hz Sensor Acquisition
+    │
+    ▼
+Live Sensor Buffers
+    │
+    ▼
+Snapshot Capture
+    │
+    ▼
+RouterBridge
+    │
+    ▼
+Complete ToFFrame
+    │
+    ▼
+Confidence Engine
+    │
+    ▼
+64-Zone Confidence Map
+    │
+    ▼
+Nearest Trusted Zone
+    │
+    ▼
+SectorObservation
+    │
+    ▼
+Relative Velocity
+    │
+    ▼
+Velocity Validity
+    │
+    ▼
+Valid-Only Velocity Smoothing
+    │
+    ▼
+Velocity State
+    │
+    ▼
+Motion Persistence Engine
+    │
+    ├── Approaching Counter
+    ├── Stationary Counter
+    └── Receding Counter
+    │
+    ▼
+ToFObservation
+    │
+    ▼
+Persistent Observation Dashboard
+```
+
+This release establishes the distinction between:
+
+```text
+Current velocity classification
+```
+
+and:
+
+```text
+Temporal consistency of that classification
+```
+
+while deliberately avoiding claims of:
+
+- Same-object tracking
+- Object identity
+- Statistical persistence probability
+- Obstacle-presence probability
+
+Version 2.3.0 completes the planned single-ToF persistence milestone and prepares SixthSense for the next architectural step:
+
+```text
+v3.0.0 — Multi-ToF Sensor Integration
+```
+
+---
 
 # [2.2.1] - 2026-08-08
 
