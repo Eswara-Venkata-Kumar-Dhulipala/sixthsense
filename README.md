@@ -4,7 +4,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-v2.2.1-blue)
+![Version](https://img.shields.io/badge/Version-v2.3.0-blue)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 ![Platform](https://img.shields.io/badge/Platform-Arduino%20UNO%20Q-red)
 ![Sensor](https://img.shields.io/badge/Sensor-VL53L5CX-brightgreen)
@@ -24,7 +24,10 @@ Raw sensor data is progressively transformed into structured observations contai
 
 - Distance
 - Measurement confidence
-- Relative motion
+- Relative velocity
+- Velocity validity
+- Velocity state
+- Motion persistence
 - Temporal history
 - Sensor quality information
 
@@ -45,13 +48,70 @@ The long-term goal is to build a wearable assistive navigation system capable of
 
 # Current Release
 
-## **v2.2.1 — Confidence-Aware Temporal ToF Observation Engine**
+## **v2.3.0 — Persistent ToF Observation Engine**
 
-Version **v2.2.1** extends the Temporal ToF Observation Engine introduced in v2.1.0 with **measurement confidence estimation**.
+Version **v2.3.0** extends the Confidence-Aware Temporal ToF Observation Engine introduced in v2.2.1 with a **Motion Persistence Engine**.
 
-The VL53L5CX sensor provides much more information than distance alone.
+Previous versions could estimate relative velocity and classify each sector as:
 
-SixthSense now uses multiple sensor quality signals to determine how trustworthy each individual ranging measurement is.
+- `Approaching`
+- `Stationary`
+- `Receding`
+
+Version v2.3.0 adds temporal evidence describing **how consistently a velocity state has been observed over successive processed observations**.
+
+The implementation maintains three independent bounded persistence counters per sector:
+
+```text
+Approaching Persistence : 0 ... 100
+Stationary Persistence  : 0 ... 100
+Receding Persistence    : 0 ... 100
+```
+
+For every processed velocity classification:
+
+```text
+Approaching:
+    Approaching +1
+    Stationary  -1
+    Receding    -1
+
+Stationary:
+    Approaching -1
+    Stationary  +1
+    Receding    -1
+
+Receding:
+    Approaching -1
+    Stationary  -1
+    Receding    +1
+
+Unknown / other:
+    Approaching -1
+    Stationary  -1
+    Receding    -1
+```
+
+All counters are saturated to:
+
+```text
+0 ... 100
+```
+
+The current velocity state's counter is exposed as:
+
+```text
+motion_persistence
+```
+
+For example:
+
+```text
+Velocity State     : Approaching
+Motion Persistence : 80
+```
+
+`Motion Persistence` is a bounded temporal consistency/evidence score. It is **not a percentage, probability, or object identity score**.
 
 Current implementation provides:
 
@@ -63,13 +123,19 @@ Current implementation provides:
 - Three-sector obstacle observation
 - Temporal observation history
 - Relative velocity estimation
-- Motion state classification
+- Velocity validity tracking
 - Velocity smoothing
+- Velocity state classification
+- `Unknown` state for unavailable/invalid velocity
+- Per-sector Motion Persistence Engine
+- Independent Approaching / Stationary / Receding persistence counters
 - Distance heatmap
 - Confidence heatmap
 - Interactive confidence-aware web dashboard
-- Live JSON observation viewer
-<img width="1918" height="968" alt="confidence_low-ezgif com-optimize" src="https://github.com/user-attachments/assets/88e09a4c-59d8-48ba-b218-b5abb367cc31" />
+- Motion persistence visualization
+- Live structured JSON observation viewer
+
+https://github.com/user-attachments/assets/ef46a591-9836-4ce6-ab65-899850638ff6
 
 ---
 
@@ -77,8 +143,8 @@ Current implementation provides:
 
 | Item | Status |
 |------|:------:|
-| Version | **v2.2.1** |
-| Milestone | Confidence-Aware Temporal ToF Observation Engine |
+| Version | **v2.3.0** |
+| Milestone | **Persistent ToF Observation Engine** |
 | Hardware | Arduino UNO Q + VL53L5CX |
 | ToF Sensors | 1 *(Planned: 6)* |
 | Dashboard | ✅ |
@@ -89,9 +155,11 @@ Current implementation provides:
 | Confidence-Aware Sector Selection | ✅ |
 | Observation History | ✅ |
 | Velocity Estimation | ✅ |
+| Velocity Validity | ✅ |
 | Velocity Smoothing | ✅ |
-| Motion Classification | ✅ |
-| Persistence Engine | 🚧 Planned |
+| Velocity State Classification | ✅ |
+| Motion Persistence Engine | ✅ |
+| Per-State Persistence Counters | ✅ |
 | Multi-Sensor Perception | 🚧 Planned |
 | Context Engine | 🚧 Planned |
 | Attention Engine | 🚧 Planned |
@@ -103,7 +171,7 @@ Current implementation provides:
 
 SixthSense includes a real-time web dashboard for visualizing the complete perception pipeline.
 
-The **v2.2.1 dashboard** displays:
+The **v2.3.0 dashboard** displays:
 
 - Sensor information
 - Sensor connection state
@@ -117,22 +185,28 @@ The **v2.2.1 dashboard** displays:
 - Confidence classification
 - VL53L5CX source zone
 - Relative velocity
-- Motion state
+- Velocity state
+- Motion persistence
 - 8×8 distance heatmap
 - 8×8 confidence heatmap
 - Temporal observation history
 - Live structured JSON observation
 - Backend and dashboard versions
 
-## Confidence-Aware Dashboard Demo
+Each sector card presents the high-level temporal observation in a compact form:
 
-![SixthSense v2.2.1 Confidence Dashboard](assets/sixthsense_v2_2_1_confidence_dashboard.gif)
+```text
+Distance             617 mm
+Confidence            81.3 % HIGH
+Zone                  63
+Velocity              -5.0 mm/s
+Velocity State        Stationary
+Motion Persistence    100
+```
 
-The left heatmap represents measured obstacle distance.
+`Motion Persistence` is intentionally displayed **without a `%` symbol** because it is a bounded evidence score rather than a calibrated probability.
 
-The right heatmap represents the confidence assigned to each corresponding VL53L5CX zone.
-
-A zone can therefore contain a raw distance measurement while still receiving low or zero confidence if the associated sensor quality indicators suggest that the measurement should not be trusted.
+The JSON viewer additionally exposes all three persistence counters for debugging and future reasoning layers.
 
 ---
 
@@ -146,8 +220,9 @@ SixthSense aims to progressively answer richer questions:
 
 - Where is the obstacle?
 - How reliable is the measurement?
-- Is the object approaching or moving away?
-- Does the observation remain stable over time?
+- Is the measured range increasing or decreasing?
+- Is the obstacle approximately approaching, stationary, or receding relative to the sensor?
+- How consistently has that velocity state been observed?
 - What is happening around the user?
 - Which information deserves the user's attention?
 - How should that information be communicated?
@@ -164,7 +239,10 @@ Confidence
 Temporal Observation
      │
      ▼
-Persistence
+Velocity State
+     │
+     ▼
+Motion Persistence
      │
      ▼
 Context
@@ -193,7 +271,7 @@ The project follows four guiding principles:
 - **Incremental Evolution** — Add and validate one capability at a time.
 - **Scalability** — Design components that naturally extend to multiple sensors.
 
-Detailed implementation and architectural decisions for individual releases are documented separately in the `docs/` directory.
+Detailed implementation and architectural decisions for individual releases are maintained separately in the `docs/` directory.
 
 ---
 
@@ -236,16 +314,14 @@ independent.
 
 # Current Runtime Architecture
 
-The current prototype validates the **Confidence-Aware Temporal ToF Observation Engine** using a single **SparkFun VL53L5CX Time-of-Flight sensor** connected to an **Arduino UNO Q**.
+The current prototype validates the **Persistent ToF Observation Engine** using a single **SparkFun VL53L5CX Time-of-Flight sensor** connected to an **Arduino UNO Q**.
 
 ```text
 VL53L5CX
     │
-    │
+    │  Continuous 15 Hz acquisition
     ▼
 Arduino UNO Q
-    │
-    │  Continuous 15 Hz acquisition
     │
     ▼
 Live Sensor Buffers
@@ -262,9 +338,17 @@ Python Backend
     │
     ├── Confidence Engine
     │
+    ├── Confidence-Aware Sector Selection
+    │
     ├── Observation Engine
     │
     ├── Velocity Estimation
+    │
+    ├── Velocity Smoothing
+    │
+    ├── Velocity State Classification
+    │
+    ├── Motion Persistence Engine
     │
     └── Observation History
     │
@@ -279,38 +363,45 @@ The Arduino continuously acquires sensor frames.
 
 When the Python backend requests a snapshot, the Arduino copies the current complete sensor state into dedicated snapshot buffers.
 
-Python can then retrieve the full measurement safely without requiring the sensor acquisition loop to stop.
+Python then retrieves the sensor arrays through the RouterBridge and creates one structured perception observation.
+
+No Arduino firmware changes are required specifically for the Motion Persistence Engine because persistence is derived in Python after temporal velocity processing.
 
 ---
 
 # VL53L5CX Sensor Data
 
-Version v2.2.1 no longer uses distance alone.
+SixthSense uses more than distance alone.
 
 For each of the 64 VL53L5CX zones, SixthSense acquires:
 
 | Measurement | Purpose |
 |-------------|---------|
 | Distance | Measured target range |
-| Signal per SPAD | Strength of returned laser signal |
+| Signal per SPAD | Strength/rate of returned ranging signal |
 | Range Sigma | Estimated ranging uncertainty |
 | Target Status | Sensor validity information |
-| Reflectance | Estimated target reflectivity |
-| Ambient per SPAD | Background light level |
+| Reflectance | Sensor-provided target reflectance information |
+| Ambient per SPAD | Background light activity |
 | Number of Targets | Number of detected targets |
 | SPADs Enabled | Active detector information |
 
-These values are transferred from the Arduino to Python through the synchronized snapshot interface.
+These values are transferred from the Arduino to Python through the snapshot interface.
+
+For clarity, the public sector observation uses explicit names for the SPAD-normalized rates:
+
+```text
+signal_kcps_per_spad
+ambient_kcps_per_spad
+```
+
+The lower-level sensor transport may continue to use shorter internal names such as `signal` and `ambient`.
 
 ---
 
 # Snapshot-Based Arduino Bridge
 
-A major change in v2.2.1 is the introduction of a **snapshot-copy architecture**.
-
-Earlier approaches could retrieve different sensor arrays from different sensor frames because each Arduino Bridge RPC required a separate transaction.
-
-SixthSense now follows:
+SixthSense uses a **snapshot-copy architecture** for transferring a complete sensor state from Arduino to Python.
 
 ```text
 Sensor continuously updates LIVE buffers
@@ -325,20 +416,22 @@ LIVE buffers copied to SNAPSHOT buffers
 Python retrieves snapshot arrays
                  │
                  ▼
-All quality signals correspond to one captured state
+Quality signals correspond to the captured snapshot state
 ```
 
 The sensor continues ranging while Python consumes the snapshot.
 
 This avoids permanently locking sensor acquisition and provides a stable interface for the Observation Engine.
 
+The current design should be understood as a snapshot-copy mechanism rather than a formally proven atomic multi-threaded transaction.
+
 ---
 
 # Confidence Engine
 
-Version **v2.2.1** introduces the first SixthSense **Confidence Engine**.
+Version **v2.2.1** introduced the SixthSense **Confidence Engine**, which remains part of v2.3.0.
 
-Instead of assuming every measured distance is equally trustworthy, the engine calculates a quality score for every one of the 64 ToF zones.
+Instead of assuming every measured distance is equally trustworthy, the engine calculates an engineering measurement-quality score for every one of the 64 ToF zones.
 
 The current confidence model combines:
 
@@ -380,32 +473,32 @@ The confidence score is reported in the range:
 
 The VL53L5CX documentation provides confidence guidance for target status.
 
-SixthSense currently interprets it as:
+SixthSense currently interprets it conservatively as:
 
-| Target Status | Status Confidence |
-|--------------:|------------------:|
-| `5` | 100% |
-| `6` | 50% |
-| `9` | 50% |
-| Other statuses | Below 50% |
+| Target Status | Status Score |
+|--------------:|-------------:|
+| `5` | 1.0 |
+| `6` | 0.5 |
+| `9` | 0.5 |
+| Other statuses | 0.0 in the current implementation |
 
-For the current implementation, statuses outside `5`, `6`, and `9` are treated conservatively as invalid for confidence-aware obstacle selection until better experimental calibration is available.
+Statuses outside `5`, `6`, and `9` are therefore rejected by the current confidence-aware obstacle-selection path.
 
-This is an intentional engineering decision.
+This is an intentional conservative engineering decision.
 
 ---
 
 # Important Confidence Note
 
-The SixthSense confidence value is currently an **engineering measurement quality score**.
+The SixthSense confidence value is currently an **engineering measurement-quality score**.
 
 For example:
 
 ```text
-Confidence = 82%
+Confidence = 82
 ```
 
-means that the current weighted confidence model produces a score of 82/100.
+means that the current weighted confidence model produces a score of approximately 82/100.
 
 It does **not currently mean**:
 
@@ -414,7 +507,7 @@ There is exactly an 82% statistical probability
 that the measured distance is correct.
 ```
 
-The current model is heuristic and will be refined using controlled sensor characterization and real-world validation data.
+The current model is heuristic and can be refined using controlled sensor characterization and real-world validation data.
 
 ---
 
@@ -449,21 +542,17 @@ Examples:
 - Range sigma
 - Ambient light
 
-Signal strength uses logarithmic normalization because VL53L5CX signal values can span a large dynamic range.
+Signal strength uses logarithmic normalization because the ranging signal can span a comparatively wide dynamic range.
 
-The normalization reference values are currently engineering parameters derived from collected sensor logs and can be recalibrated as additional experimental data becomes available.
+The normalization reference values are engineering parameters and can be recalibrated as additional experimental data becomes available.
 
 ---
 
 # Confidence-Aware Observation
 
-A major behavioral change in v2.2.1 is that sector selection is now confidence-aware.
+Sector selection remains confidence-aware in v2.3.0.
 
-Earlier versions selected the nearest non-zero distance inside a sector.
-
-The current implementation selects the nearest **trusted** zone.
-
-A measurement must satisfy the configured validity and confidence requirements before it can represent a sector obstacle.
+The implementation selects the nearest **trusted** zone rather than simply selecting the nearest non-zero distance.
 
 Conceptually:
 
@@ -477,7 +566,7 @@ Distance Valid?
 Target Detected?
         │
         ▼
-Target Status Valid?
+Target Status Accepted?
         │
         ▼
 Confidence > 0?
@@ -489,7 +578,7 @@ Nearest Trusted Zone
 Sector Observation
 ```
 
-This prevents an unreliable sensor reading from becoming the primary obstacle observation simply because its reported distance happens to be the smallest.
+This prevents an unusable measurement from becoming the primary sector observation simply because its reported distance happens to be the smallest.
 
 ---
 
@@ -506,13 +595,45 @@ Current capabilities include:
 - Observation history
 - Temporal processing
 - Relative velocity estimation
-- Motion state classification
+- Velocity validity tracking
 - Velocity smoothing
+- Velocity state classification
+- Motion persistence estimation
 - Raw quality information attached to selected observations
+
+The processing order is:
+
+```text
+VL53L5CX Snapshot
+        │
+        ▼
+Confidence Engine
+        │
+        ▼
+Nearest Trusted Zone
+        │
+        ▼
+Sector Observation
+        │
+        ▼
+Velocity Estimation
+        │
+        ▼
+Velocity Smoothing
+        │
+        ▼
+Velocity State Classification
+        │
+        ▼
+Motion Persistence Engine
+        │
+        ▼
+ToFObservation
+```
 
 The Observation Engine performs **perception only**.
 
-Environmental understanding, prioritization, navigation reasoning, and feedback are intentionally handled by future architectural layers.
+Environmental understanding, prioritization, navigation reasoning, and user feedback are intentionally handled by future architectural layers.
 
 ---
 
@@ -538,70 +659,34 @@ The current sector observation contains:
 - Nearest trusted distance
 - Source VL53L5CX zone
 - Confidence score
-- Signal
+- Signal per SPAD
 - Range sigma
 - Target status
 - Reflectance
-- Ambient level
+- Ambient per SPAD
 - Number of detected targets
 - Enabled SPADs
 - Relative velocity
-- Motion state
-- Persistence placeholder
-
----
-
-# ToFObservation
-
-Every successfully processed sensor snapshot generates one structured **ToFObservation**.
-
-A simplified representation is:
-
-```json
-{
-    "sensor_id": "tof_01",
-    "sensor_name": "Prototype ToF",
-    "status": "ONLINE",
-    "frame_number": 934,
-    "timestamp": 88774,
-    "fps": 6.1,
-    "history_size": 20,
-    "sectors": [
-        {
-            "sector_id": 0,
-            "distance_mm": 542,
-            "zone_id": 63,
-            "confidence": 88.3,
-            "signal": 138,
-            "sigma": 5,
-            "target_status": 5,
-            "reflectance": 91,
-            "ambient": 120,
-            "targets": 1,
-            "spads": 3584,
-            "velocity_mmps": -6.5,
-            "velocity_state": "Stationary",
-            "persistence": 0
-        }
-    ]
-}
-```
-
-Higher-level modules can consume this structured observation rather than interacting directly with raw sensor arrays.
+- Velocity validity
+- Velocity state
+- Motion persistence
+- Approaching persistence counter
+- Stationary persistence counter
+- Receding persistence counter
 
 ---
 
 # Temporal Observation
 
-SixthSense maintains a history of recent observations.
+SixthSense maintains a history of recent processed observations.
 
-Current history size:
+Current observation-history capacity:
 
 ```text
 20 observations
 ```
 
-Temporal information enables the system to estimate relative obstacle motion.
+Temporal information enables the system to estimate relative range velocity.
 
 For each sector:
 
@@ -615,12 +700,329 @@ velocity =
 Interpretation:
 
 ```text
-Negative velocity  -> Approaching
-Positive velocity  -> Receding
-Near zero          -> Stationary
+Negative velocity  -> range is decreasing
+Positive velocity  -> range is increasing
+Near zero          -> approximately stationary range
 ```
 
-Velocity measurements are smoothed using a short moving-average history to reduce frame-to-frame noise.
+The current velocity-state threshold is:
+
+```text
+velocity < -50 mm/s  -> Approaching
+velocity > +50 mm/s  -> Receding
+otherwise            -> Stationary
+```
+
+The velocity represents **relative range change**, not full 2-D or 3-D object velocity.
+
+---
+
+# Confidence and Velocity Validity
+
+Confidence participates in velocity estimation as a **validity gate**.
+
+Velocity is calculated only when both the current and previous sector observations provide usable trusted distances.
+
+Conceptually:
+
+```text
+Current trusted distance?
+        │
+        ├── No  -> velocity_valid = false
+        │
+        ▼
+Previous trusted distance?
+        │
+        ├── No  -> velocity_valid = false
+        │
+        ▼
+Calculate relative velocity
+        │
+        ▼
+velocity_valid = true
+```
+
+The numerical confidence score is **not multiplied into the physical velocity value**.
+
+For example, a lower but still accepted confidence value does not artificially reduce the calculated range velocity.
+
+---
+
+# Velocity Smoothing
+
+SixthSense uses a short per-sector velocity history to reduce frame-to-frame noise.
+
+Current smoothing capacity:
+
+```text
+5 valid velocity samples
+```
+
+Only valid velocity samples are inserted into the velocity smoothing history.
+
+An unavailable velocity is therefore not inserted as a synthetic zero measurement.
+
+This distinction is important because:
+
+```text
+velocity = 0, velocity_valid = true
+```
+
+means a valid velocity estimate that is near zero, while:
+
+```text
+velocity = 0, velocity_valid = false
+```
+
+means that velocity could not be calculated from the current transition.
+
+---
+
+# Velocity State
+
+Version v2.3.0 explicitly distinguishes valid velocity classification from unavailable velocity.
+
+The possible states are:
+
+```text
+Approaching
+Stationary
+Receding
+Unknown
+```
+
+Classification follows:
+
+```text
+velocity_valid = false
+        │
+        ▼
+      Unknown
+```
+
+Otherwise:
+
+```text
+velocity < -50 mm/s
+        │
+        ▼
+   Approaching
+
+-50 mm/s <= velocity <= +50 mm/s
+        │
+        ▼
+    Stationary
+
+velocity > +50 mm/s
+        │
+        ▼
+     Receding
+```
+
+This prevents an invalid placeholder numerical zero from being incorrectly interpreted as a genuine Stationary observation.
+
+---
+
+# Motion Persistence Engine
+
+Version **v2.3.0** introduces the **Motion Persistence Engine**.
+
+The engine answers a focused temporal question:
+
+> **How consistently has the current velocity state been observed in this sector?**
+
+It maintains three independent counters for every logical sector:
+
+```text
+Approaching
+Stationary
+Receding
+```
+
+Each counter is bounded to:
+
+```text
+0 ... 100
+```
+
+The update rule is symmetric.
+
+## Approaching Observation
+
+```text
+Approaching += 1
+Stationary  -= 1
+Receding    -= 1
+```
+
+## Stationary Observation
+
+```text
+Approaching -= 1
+Stationary  += 1
+Receding    -= 1
+```
+
+## Receding Observation
+
+```text
+Approaching -= 1
+Stationary  -= 1
+Receding    += 1
+```
+
+## Unknown or Other Observation
+
+```text
+Approaching -= 1
+Stationary  -= 1
+Receding    -= 1
+```
+
+All operations are clamped to the valid range.
+
+The current state's counter is published as:
+
+```text
+motion_persistence
+```
+
+The complete internal state is also exposed as:
+
+```json
+"motion_persistence_counters": {
+    "approaching": 0,
+    "stationary": 100,
+    "receding": 0
+}
+```
+
+---
+
+# Motion Persistence Semantics
+
+Motion persistence is intentionally simple and interpretable.
+
+For example, after many consistent `Approaching` observations:
+
+```text
+Approaching = 80
+Stationary  = 3
+Receding    = 0
+```
+
+If the next observation is `Stationary`:
+
+```text
+Approaching = 79
+Stationary  = 4
+Receding    = 0
+```
+
+If `Approaching` resumes, the approaching counter can continue to recover.
+
+This provides temporal memory without requiring object tracking.
+
+---
+
+# Important Motion Persistence Note
+
+`motion_persistence` is **not**:
+
+- A probability
+- A percentage
+- Measurement confidence
+- Obstacle-presence probability
+- Same-object tracking confidence
+- An object identifier
+
+It is a bounded **observation-based temporal consistency score for velocity classification**.
+
+At an effective backend processing rate of approximately 5 observations per second:
+
+```text
+100 consecutive consistent classifications
+≈ 20 seconds
+```
+
+At approximately 6 observations per second:
+
+```text
+100 consecutive consistent classifications
+≈ 16.7 seconds
+```
+
+Therefore the current persistence score is **observation-count based**, not explicitly time-normalized.
+
+---
+
+# Invalid Velocity and Persistence
+
+When the system cannot calculate a valid velocity from the current and previous observations:
+
+```text
+velocity_valid = false
+velocity_state = Unknown
+```
+
+The Persistence Engine then applies its general "other classification" rule:
+
+```text
+Approaching -= 1
+Stationary  -= 1
+Receding    -= 1
+```
+
+This prevents an unavailable velocity from strengthening the Stationary persistence counter.
+
+If no new sensor observation is processed at all, the Persistence Engine is not updated and the counters remain unchanged.
+
+---
+
+# ToFObservation
+
+Every successfully processed sensor snapshot generates one structured **ToFObservation**.
+
+A simplified v2.3.0 representation is:
+
+```json
+{
+    "sensor_id": "tof_01",
+    "sensor_name": "Prototype ToF",
+    "status": "ONLINE",
+    "frame_number": 1258,
+    "timestamp": 121478,
+    "fps": 5.5,
+    "history_size": 20,
+    "sectors": [
+        {
+            "sector_id": 0,
+            "sector_name": "Sector 0",
+            "distance_mm": 617,
+            "zone_id": 63,
+            "confidence": 81.3,
+            "signal_kcps_per_spad": 121,
+            "sigma": 6,
+            "target_status": 5,
+            "reflectance": 115,
+            "ambient_kcps_per_spad": 127,
+            "targets": 1,
+            "spads": 4096,
+            "velocity_mmps": -5.0,
+            "velocity_valid": true,
+            "velocity_state": "Stationary",
+            "motion_persistence": 100,
+            "motion_persistence_counters": {
+                "approaching": 0,
+                "stationary": 100,
+                "receding": 0
+            }
+        }
+    ]
+}
+```
+
+Higher-level modules can consume this structured observation rather than interacting directly with raw sensor arrays.
 
 ---
 
@@ -642,7 +1044,7 @@ Near obstacle
 
 ## Confidence Heatmap
 
-The confidence heatmap visualizes the quality score associated with each zone.
+The confidence heatmap visualizes the measurement-quality score associated with each zone.
 
 ```text
 Low confidence
@@ -663,14 +1065,22 @@ What the sensor measured
 against:
 
 ```text
-How much the current system trusts the measurement
+How much the current confidence model trusts the measurement
+```
+
+The sector cards additionally expose the temporal interpretation:
+
+```text
+Relative Velocity
+Velocity State
+Motion Persistence
 ```
 
 ---
 
 # Current Capabilities
 
-Version **v2.2.1** provides:
+Version **v2.3.0** provides:
 
 | Capability | Status |
 |------------|:------:|
@@ -678,17 +1088,20 @@ Version **v2.2.1** provides:
 | Static obstacle observation | ✅ |
 | Temporal observation history | ✅ |
 | Relative velocity estimation | ✅ |
-| Motion state classification | ✅ |
-| Velocity smoothing | ✅ |
+| Velocity validity tracking | ✅ |
+| Velocity state classification | ✅ |
+| Unknown state for invalid velocity | ✅ |
+| Valid-only velocity smoothing | ✅ |
 | Complete VL53L5CX quality acquisition | ✅ |
 | Arduino snapshot transport | ✅ |
 | 64-zone confidence estimation | ✅ |
 | Confidence-aware sector selection | ✅ |
+| Motion Persistence Engine | ✅ |
+| Per-state persistence counters | ✅ |
 | Distance heatmap | ✅ |
 | Confidence heatmap | ✅ |
 | Interactive web dashboard | ✅ |
 | Live JSON observations | ✅ |
-| Persistence estimation | 🚧 Planned |
 | Multi-sensor support | 🚧 Planned |
 | Context reasoning | 🚧 Planned |
 | Attention model | 🚧 Planned |
@@ -702,16 +1115,18 @@ The current implementation intentionally focuses on **perception**.
 
 It does not yet attempt to:
 
-- Understand complete environmental context
+- Identify or track individual physical objects
+- Fuse measurements from multiple ToF sensors
+- Infer complete environmental context
 - Estimate user intent
-- Persistently track obstacles
-- Fuse multiple ToF sensors
 - Prioritize observations
 - Generate navigation decisions
 - Produce haptic feedback
 - Produce spatial audio feedback
 
-These capabilities will be introduced progressively through future releases.
+Motion persistence should not be confused with same-object tracking.
+
+If a selected zone changes within the same logical sector, the Persistence Engine continues to operate on the sector's velocity-state sequence.
 
 ---
 
@@ -726,9 +1141,9 @@ These capabilities will be introduced progressively through future releases.
 | Qwiic JST Cable | 1 |
 | USB-C Cable | 1 |
 
-The current prototype intentionally uses a single ToF sensor to validate the complete perception architecture before scaling to multiple sensors.
+The current prototype intentionally uses a single ToF sensor to validate the perception architecture before scaling to multiple sensors.
 
-Future releases will expand the system toward six independent Time-of-Flight sensors.
+Future releases will expand the system toward multiple independently observed directions.
 
 <img width="960" height="1280" alt="Arduino UNO Q with VL53L5CX" src="https://github.com/user-attachments/assets/4968e3f6-217f-41ab-af97-992710e7f006" />
 
@@ -768,7 +1183,6 @@ sixthsense/
 │   ├── index.html
 │   ├── style.css
 │   ├── app.js
-│   ├── sixthsense_v2_2_1_confidence_dashboard.gif
 │   └── libs/
 │
 └── docs/
@@ -848,21 +1262,27 @@ Confidence-Aware
 Temporal Observation
         │
         ▼
-Persistence
+v2.3.0
+Motion Persistence
         │
         ▼
+v3.0.0
 Multi-Sensor Perception
         │
         ▼
+v4.0.0
 Context
         │
         ▼
+v5.0.0
 Attention
         │
         ▼
+v6.0.0
 Feedback
         │
         ▼
+v7.0.0
 Complete Prototype
 ```
 
@@ -875,7 +1295,7 @@ Complete Prototype
 | **v2.0.0** | Static ToF Observation Engine | ✅ |
 | **v2.1.0** | Temporal ToF Observation Engine | ✅ |
 | **v2.2.1** | Confidence-Aware Temporal ToF Observation Engine | ✅ |
-| **v2.3.0** | Persistent ToF Observation Engine | 🚧 |
+| **v2.3.0** | Persistent ToF Observation Engine | ✅ |
 | **v3.0.0** | Multi-ToF Sensor Integration | 🚧 |
 | **v4.0.0** | Context Engine | 🚧 |
 | **v5.0.0** | Attention Engine | 🚧 |
@@ -886,17 +1306,13 @@ Complete Prototype
 
 # Future Direction
 
-The current release establishes a **confidence-aware perception foundation**.
+Version v2.3.0 establishes a **confidence-aware temporal perception layer with motion-state persistence**.
 
 The next major steps are expected to include:
 
-### Persistence
-
-Determine whether an observed obstacle remains consistently present across multiple observations rather than reacting to isolated detections.
-
 ### Multi-Sensor Perception
 
-Scale the architecture from one ToF sensor to multiple independently observed directions.
+Scale the architecture from one ToF sensor to multiple independently observed directions while preserving a consistent observation interface.
 
 ### Context Engine
 
@@ -930,7 +1346,7 @@ Feedback
 
 # Known Limitations
 
-Version v2.2.1 currently has several intentional limitations.
+Version v2.3.0 has several intentional limitations.
 
 ### Single Sensor
 
@@ -940,21 +1356,41 @@ Only one VL53L5CX sensor is currently integrated.
 
 The confidence model is an engineering quality score and has not yet been statistically calibrated against large-scale ground-truth datasets.
 
-### Relative Motion Only
+### Relative Range Velocity Only
 
-Velocity is estimated from successive sector distances and represents relative range change rather than complete object motion.
+Velocity is estimated from successive sector distances.
 
-### No Persistent Object Tracking
+It represents relative range change rather than complete object motion or world-frame velocity.
 
-Sector observations currently represent the latest trusted measurement.
+### Sector-Level Motion Persistence
 
-Long-term obstacle persistence will be handled by a future Persistence Engine.
+Persistence is maintained independently per logical sector.
+
+It does not prove that the same physical object generated every observation in the sequence.
+
+### No Object Tracking
+
+The current implementation does not associate detections with persistent object identities.
+
+Motion persistence therefore represents consistency of the sector's velocity classification, not same-object persistence.
+
+### Observation-Based Persistence
+
+Persistence increments and decrements once per processed observation.
+
+It is not currently normalized by elapsed wall-clock time.
 
 ### Effective Backend Observation Rate
 
 The VL53L5CX is configured for higher-rate sensor acquisition, while the Python backend performs multiple RouterBridge calls per snapshot.
 
 The backend may therefore process fewer observations per second than the underlying sensor acquisition frequency.
+
+### Persistence Memory Across Measurement Gaps
+
+Invalid velocity transitions do not enter the smoothing history and are classified as `Unknown`.
+
+The current implementation does not perform explicit object re-identification across measurement gaps.
 
 ---
 
@@ -972,11 +1408,31 @@ Observed functionality includes:
 - 64-zone confidence computation
 - Confidence-aware sector selection
 - Relative velocity calculation
-- Temporal observation history
+- Velocity validity handling
+- Valid-only velocity smoothing
+- Velocity state classification
+- `Unknown` state handling
+- Motion persistence counter updates
+- Persistence saturation at 0 and 100
+- Independent per-sector persistence
 - Distance heatmap visualization
 - Confidence heatmap visualization
 - Real-time dashboard updates
+- Motion persistence dashboard display
 - Live structured JSON observations
+
+Recommended v2.3.0 persistence validation cases include:
+
+- Continuous Stationary observations
+- Continuous Approaching observations
+- Continuous Receding observations
+- Single-state glitches
+- Sustained state transitions
+- Unknown / invalid velocity transitions
+- Counter saturation at 100
+- Counter floor at 0
+- Independent behavior across sectors
+- Zone changes within the same sector
 
 ---
 
@@ -1016,6 +1472,8 @@ Areas where contributions can have significant impact include:
 - Time-of-Flight perception
 - Sensor confidence modelling
 - Sensor characterization
+- Temporal perception
+- Motion persistence
 - Embedded firmware
 - Python perception algorithms
 - Multi-sensor architecture
@@ -1034,7 +1492,7 @@ If you plan to contribute:
 
 For bug reports and feature requests, use **GitHub Issues**.
 
-For architectural discussions and ideas, use **GitHub Discussions**.
+For architectural discussions and ideas, use **GitHub Discussions** when available for the repository.
 
 ---
 
@@ -1089,8 +1547,8 @@ Questions, suggestions, bug reports, architectural discussions, and contribution
 Please use:
 
 - GitHub Issues
-- GitHub Discussions
 - Pull Requests
+- Repository discussions when available
 
 Constructive feedback and contributions are greatly appreciated.
 
@@ -1100,6 +1558,6 @@ Constructive feedback and contributions are greatly appreciated.
 
 ### SixthSense
 
-**Perception → Confidence → Understanding → Attention → Feedback**
+**Perception → Confidence → Temporal Motion → Persistence → Understanding → Attention → Feedback**
 
 </div>
