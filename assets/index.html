@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0">
@@ -23,18 +24,21 @@
     <!-- ========================================================== -->
 
     <header id="app-header">
+
         <h1>SixthSense</h1>
 
         <h2>
-            Confidence-Aware Temporal ToF Observation + Motion Persistence Engine
+            Six-ToF Confidence-Aware Temporal Observation Engine
         </h2>
 
         <div id="version-container">
             <span id="application-name">SixthSense</span>
             |
-            <span id="application-version">v2.3.0</span>
+            <span id="application-version">v3.0.0</span>
         </div>
+
     </header>
+
 
     <!-- ========================================================== -->
     <!-- Main Dashboard                                             -->
@@ -43,79 +47,296 @@
     <main id="dashboard">
 
         <!-- ====================================================== -->
-        <!-- Sensor Information                                     -->
+        <!-- Fixed Configuration                                    -->
         <!-- ====================================================== -->
 
         <section
-            class="card"
-            id="sensor-card">
+            class="card full-width"
+            id="configuration-card">
 
             <div class="card-header">
-                <h2>Sensor Information</h2>
+                <h2>Multi-ToF Configuration</h2>
             </div>
 
             <div class="card-body">
-                <table class="info-table">
-                    <tr>
-                        <td>Sensor ID</td>
-                        <td><span id="sensor-id">--</span></td>
-                    </tr>
 
-                    <tr>
-                        <td>Sensor Name</td>
-                        <td><span id="sensor-name">--</span></td>
-                    </tr>
+                <div class="configuration-grid">
 
-                    <tr>
-                        <td>Status</td>
-                        <td><span id="sensor-status">OFFLINE</span></td>
-                    </tr>
+                    <div class="configuration-item">
+                        <span>Sensors</span>
+                        <strong>6 × VL53L5CX</strong>
+                    </div>
 
-                    <tr>
-                        <td>Frame</td>
-                        <td><span id="sensor-frame">0</span></td>
-                    </tr>
+                    <div class="configuration-item">
+                        <span>Resolution</span>
+                        <strong>4 × 4</strong>
+                    </div>
 
-                    <tr>
-                        <td>Timestamp</td>
-                        <td>
-                            <span id="sensor-timestamp">0</span>
-                            ms
-                        </td>
-                    </tr>
+                    <div class="configuration-item">
+                        <span>Zones</span>
+                        <strong>16 / sensor · 96 total</strong>
+                    </div>
 
-                    <tr>
-                        <td>FPS</td>
-                        <td><span id="sensor-fps">0</span></td>
-                    </tr>
-                </table>
+                    <div class="configuration-item">
+                        <span>Requested ranging</span>
+                        <strong>30 Hz</strong>
+                    </div>
+
+                    <div class="configuration-item">
+                        <span>Measured retrieval</span>
+                        <strong>≈ 14 Hz / sensor</strong>
+                    </div>
+
+                    <div class="configuration-item">
+                        <span>Integration time</span>
+                        <strong>20 ms</strong>
+                    </div>
+
+                    <div class="configuration-item">
+                        <span>I²C</span>
+                        <strong>400 kHz</strong>
+                    </div>
+
+                    <div class="configuration-item">
+                        <span>Packet size</span>
+                        <strong>128 bytes</strong>
+                    </div>
+
+                </div>
+
+                <div class="mapping-note">
+                    T1 → CH0 → Front-right ·
+                    T2 → CH1 → Front ·
+                    T3 → CH2 → Front-left ·
+                    T4 → CH5 → Rear-left ·
+                    T5 → CH6 → Rear ·
+                    T6 → CH7 → Rear-right
+                </div>
+
             </div>
+
         </section>
 
+
         <!-- ====================================================== -->
-        <!-- ToF Observation                                        -->
+        <!-- Six-ToF Overview                                      -->
         <!-- ====================================================== -->
 
         <section
-            class="card"
+            class="card full-width"
+            id="sensor-overview-card">
+
+            <div class="card-header">
+                <h2>Six-ToF Overview</h2>
+            </div>
+
+            <div class="card-body">
+
+                <div
+                    id="sensor-overview-grid"
+                    class="sensor-overview-grid">
+
+                    <div class="empty-state">
+                        Waiting for six-sensor observations...
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ====================================================== -->
+        <!-- Selected Sensor                                       -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card full-width"
+            id="selected-sensor-card">
+
+            <div class="card-header selected-sensor-header">
+
+                <h2>Selected ToF Detail</h2>
+
+                <div
+                    id="sensor-selector"
+                    class="sensor-selector">
+
+                    <button
+                        type="button"
+                        class="sensor-select-button"
+                        data-sensor-id="T1">
+                        T1 · Front-right
+                    </button>
+
+                    <button
+                        type="button"
+                        class="sensor-select-button active"
+                        data-sensor-id="T2">
+                        T2 · Front
+                    </button>
+
+                    <button
+                        type="button"
+                        class="sensor-select-button"
+                        data-sensor-id="T3">
+                        T3 · Front-left
+                    </button>
+
+                    <button
+                        type="button"
+                        class="sensor-select-button"
+                        data-sensor-id="T4">
+                        T4 · Rear-left
+                    </button>
+
+                    <button
+                        type="button"
+                        class="sensor-select-button"
+                        data-sensor-id="T5">
+                        T5 · Rear
+                    </button>
+
+                    <button
+                        type="button"
+                        class="sensor-select-button"
+                        data-sensor-id="T6">
+                        T6 · Rear-right
+                    </button>
+
+                </div>
+
+            </div>
+
+            <div class="card-body selected-sensor-layout">
+
+                <div>
+
+                    <h3 class="subsection-title">
+                        Sensor Information
+                    </h3>
+
+                    <table class="info-table">
+
+                        <tr>
+                            <td>Sensor ID</td>
+                            <td><span id="sensor-id">--</span></td>
+                        </tr>
+
+                        <tr>
+                            <td>Position</td>
+                            <td><span id="sensor-name">--</span></td>
+                        </tr>
+
+                        <tr>
+                            <td>Mux Channel</td>
+                            <td>CH<span id="sensor-mux-channel">--</span></td>
+                        </tr>
+
+                        <tr>
+                            <td>Status</td>
+                            <td><span id="sensor-status">OFFLINE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td>Frame</td>
+                            <td><span id="sensor-frame">0</span></td>
+                        </tr>
+
+                        <tr>
+                            <td>Read-completion timestamp</td>
+                            <td>
+                                <span id="sensor-timestamp">0</span>
+                                ms
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td>Retrieved FPS</td>
+                            <td><span id="sensor-fps">0</span></td>
+                        </tr>
+
+                        <tr>
+                            <td>History</td>
+                            <td>
+                                <span id="history-size">0</span>
+                                /
+                                <span id="history-capacity">20</span>
+                            </td>
+                        </tr>
+
+                    </table>
+
+                </div>
+
+
+                <div>
+
+                    <h3 class="subsection-title">
+                        Local Sector Definition
+                    </h3>
+
+                    <div class="sector-definition">
+
+                        <div class="sector-definition-cell">
+                            <strong>S0</strong>
+                            <span>left-most column</span>
+                            <span>4 zones</span>
+                        </div>
+
+                        <div class="sector-definition-cell sector-definition-center">
+                            <strong>S1</strong>
+                            <span>middle two columns</span>
+                            <span>8 zones</span>
+                        </div>
+
+                        <div class="sector-definition-cell">
+                            <strong>S2</strong>
+                            <span>right-most column</span>
+                            <span>4 zones</span>
+                        </div>
+
+                    </div>
+
+                    <p class="technical-note">
+                        S0/S1/S2 are local oriented-grid sectors.
+                        Confidence is a measurement-quality heuristic, not a probability.
+                    </p>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ====================================================== -->
+        <!-- Selected ToF Observation                              -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card full-width"
             id="observation-card">
 
             <div class="card-header">
-                <h2>ToF Observation</h2>
+                <h2>Selected ToF Sector Observations</h2>
             </div>
 
             <div class="card-body">
+
                 <div class="sector-grid">
 
-                    <!-- Sector 0 -->
+                    <!-- S0 -->
 
                     <div
                         class="sector-card"
                         id="sector0-card">
 
-                        <h3>Sector 0</h3>
+                        <h3>S0</h3>
 
                         <table class="info-table">
+
                             <tr>
                                 <td>Distance</td>
                                 <td>
@@ -132,7 +353,7 @@
                                     <span
                                         id="sector0-confidence"
                                         class="confidence-value">--</span>
-                                    %
+
                                     <span
                                         id="sector0-confidence-level"
                                         class="confidence-badge confidence-invalid">
@@ -177,18 +398,22 @@
                                         class="persistence-value">0</span>
                                 </td>
                             </tr>
+
                         </table>
+
                     </div>
 
-                    <!-- Sector 1 -->
+
+                    <!-- S1 -->
 
                     <div
                         class="sector-card"
                         id="sector1-card">
 
-                        <h3>Sector 1</h3>
+                        <h3>S1</h3>
 
                         <table class="info-table">
+
                             <tr>
                                 <td>Distance</td>
                                 <td>
@@ -205,7 +430,7 @@
                                     <span
                                         id="sector1-confidence"
                                         class="confidence-value">--</span>
-                                    %
+
                                     <span
                                         id="sector1-confidence-level"
                                         class="confidence-badge confidence-invalid">
@@ -250,18 +475,22 @@
                                         class="persistence-value">0</span>
                                 </td>
                             </tr>
+
                         </table>
+
                     </div>
 
-                    <!-- Sector 2 -->
+
+                    <!-- S2 -->
 
                     <div
                         class="sector-card"
                         id="sector2-card">
 
-                        <h3>Sector 2</h3>
+                        <h3>S2</h3>
 
                         <table class="info-table">
+
                             <tr>
                                 <td>Distance</td>
                                 <td>
@@ -278,7 +507,7 @@
                                     <span
                                         id="sector2-confidence"
                                         class="confidence-value">--</span>
-                                    %
+
                                     <span
                                         id="sector2-confidence-level"
                                         class="confidence-badge confidence-invalid">
@@ -323,35 +552,42 @@
                                         class="persistence-value">0</span>
                                 </td>
                             </tr>
+
                         </table>
+
                     </div>
 
                 </div>
+
             </div>
+
         </section>
 
+
         <!-- ====================================================== -->
-        <!-- Heatmaps                                                -->
+        <!-- Selected ToF Heatmaps                                 -->
         <!-- ====================================================== -->
 
         <section
-            class="card"
+            class="card full-width"
             id="heatmap-card">
 
             <div class="card-header">
-                <h2>ToF Heatmaps</h2>
+                <h2>Selected ToF 4×4 Heatmaps</h2>
             </div>
 
             <div class="card-body">
+
                 <div class="heatmap-grid">
 
                     <div class="heatmap-panel">
+
                         <h3>Distance (mm)</h3>
 
                         <canvas
                             id="tof-canvas"
-                            width="512"
-                            height="512">
+                            width="480"
+                            height="480">
                         </canvas>
 
                         <div class="heatmap-legend">
@@ -359,15 +595,18 @@
                             <div class="distance-gradient"></div>
                             <span>Far</span>
                         </div>
+
                     </div>
 
+
                     <div class="heatmap-panel">
-                        <h3>Measurement Confidence (%)</h3>
+
+                        <h3>Measurement Confidence</h3>
 
                         <canvas
                             id="confidence-canvas"
-                            width="512"
-                            height="512">
+                            width="480"
+                            height="480">
                         </canvas>
 
                         <div class="heatmap-legend">
@@ -375,36 +614,44 @@
                             <div class="confidence-gradient"></div>
                             <span>High</span>
                         </div>
+
                     </div>
 
                 </div>
 
                 <div class="heatmap-note">
-                    Red vertical lines indicate the three logical sector boundaries.
-                    Confidence is a measurement-quality score, not a calibrated probability.
+                    Red vertical lines mark the 4×4 sector boundaries:
+                    S0 = column 0,
+                    S1 = columns 1–2,
+                    S2 = column 3.
                 </div>
+
             </div>
+
         </section>
 
+
         <!-- ====================================================== -->
-        <!-- Observation JSON                                       -->
+        <!-- Multi-ToF JSON                                        -->
         <!-- ====================================================== -->
 
         <section
-            class="card"
+            class="card full-width"
             id="json-card">
 
             <div class="card-header">
-                <h2>ToF Observation (JSON)</h2>
+                <h2>Multi-ToF Observation (JSON)</h2>
             </div>
 
             <div class="card-body">
                 <pre id="observation-json">Waiting for observations...</pre>
             </div>
+
         </section>
 
+
         <!-- ====================================================== -->
-        <!-- System Status                                          -->
+        <!-- System Status                                         -->
         <!-- ====================================================== -->
 
         <section
@@ -416,7 +663,9 @@
             </div>
 
             <div class="card-body">
+
                 <table class="info-table">
+
                     <tr>
                         <td>Arduino Bridge</td>
                         <td><span id="bridge-status">WAITING</span></td>
@@ -428,24 +677,33 @@
                     </tr>
 
                     <tr>
-                        <td>ToF Sensor</td>
+                        <td>Six-ToF System</td>
                         <td><span id="tof-status">OFFLINE</span></td>
                     </tr>
 
                     <tr>
-                        <td>Observation History</td>
+                        <td>Online Sensors</td>
                         <td>
-                            <span id="history-size">0</span>
+                            <span id="online-sensor-count">0</span>
                             /
-                            <span id="history-capacity">20</span>
+                            <span id="sensor-count">6</span>
                         </td>
                     </tr>
+
+                    <tr>
+                        <td>Observation Number</td>
+                        <td><span id="observation-number">0</span></td>
+                    </tr>
+
                 </table>
+
             </div>
+
         </section>
 
+
         <!-- ====================================================== -->
-        <!-- Debug Information                                      -->
+        <!-- Debug Information                                     -->
         <!-- ====================================================== -->
 
         <section
@@ -457,10 +715,12 @@
             </div>
 
             <div class="card-body">
+
                 <table class="info-table">
+
                     <tr>
                         <td>Dashboard Version</td>
-                        <td><span id="dashboard-version">2.3.0</span></td>
+                        <td><span id="dashboard-version">3.0.0</span></td>
                     </tr>
 
                     <tr>
@@ -480,13 +740,17 @@
 
                     <tr>
                         <td>Observation Engine</td>
-                        <td>Temporal ToF + Confidence + Motion Persistence</td>
+                        <td>6 × temporal ToF + confidence + motion persistence</td>
                     </tr>
+
                 </table>
+
             </div>
+
         </section>
 
     </main>
+
 
     <!-- ========================================================== -->
     <!-- Footer                                                     -->
@@ -495,7 +759,7 @@
     <footer id="footer">
         <div>SixthSense</div>
         <div>Arduino UNO Q</div>
-        <div>Confidence-Aware Temporal ToF Observation + Motion Persistence Engine</div>
+        <div>6 × VL53L5CX · 4×4 · Multi-ToF Observation Engine</div>
     </footer>
 
     <script src="app.js"></script>
