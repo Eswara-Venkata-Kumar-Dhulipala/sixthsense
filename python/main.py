@@ -4,28 +4,23 @@
 #
 # SixthSense
 #
-# Version : 3.0.0
+# Version : 2.3.0
 #
-# Module  : Multi-ToF Observation Engine
+# Module  : Python Backend
 #
 # Platform: Arduino UNO Q
 #
 # Features
 #
-#   • 6 x VL53L5CX through I2C mux
-#   • 4x4 / 16 zones per sensor
-#   • 96 raw zones total
-#   • 30 Hz requested ranging frequency
-#   • 400 kHz I2C
-#   • 128-byte SparkFun transfer packet
-#   • Immutable six-sensor ready/read/consume Bridge observation
-#   • Per-zone confidence estimation
-#   • Three sectors per ToF: S0 / S1 / S2
-#   • Independent temporal history per sensor
-#   • Velocity estimation and smoothing
+#   • Complete VL53L5CX Bridge snapshot
+#   • 64-zone confidence estimation
+#   • Sector observations
+#   • Temporal history
+#   • Velocity estimation
+#   • Velocity smoothing
 #   • Motion classification
 #   • Motion persistence
-#   • Multi-sensor WebUI payload
+#   • Sensor initialization diagnostics
 #
 ###############################################################################
 
@@ -45,77 +40,28 @@ from arduino.app_bricks.web_ui import WebUI
 ###############################################################################
 
 APP_NAME = "SixthSense"
-APP_VERSION = "3.0.0"
+
+APP_VERSION = "2.3.0"
 
 
 ###############################################################################
-# Fixed Six-ToF Configuration
+# Sensor Configuration
 ###############################################################################
 
-NUM_SENSORS = 6
+TOF_SENSOR_ID = "tof_01"
 
-SENSOR_CONFIGS = (
-    {
-        "sensor_index": 0,
-        "sensor_id": "T1",
-        "sensor_name": "Front-right",
-        "position": "Front-right",
-        "mux_channel": 0,
-    },
-    {
-        "sensor_index": 1,
-        "sensor_id": "T2",
-        "sensor_name": "Front",
-        "position": "Front",
-        "mux_channel": 1,
-    },
-    {
-        "sensor_index": 2,
-        "sensor_id": "T3",
-        "sensor_name": "Front-left",
-        "position": "Front-left",
-        "mux_channel": 2,
-    },
-    {
-        "sensor_index": 3,
-        "sensor_id": "T4",
-        "sensor_name": "Rear-left",
-        "position": "Rear-left",
-        "mux_channel": 5,
-    },
-    {
-        "sensor_index": 4,
-        "sensor_id": "T5",
-        "sensor_name": "Rear",
-        "position": "Rear",
-        "mux_channel": 6,
-    },
-    {
-        "sensor_index": 5,
-        "sensor_id": "T6",
-        "sensor_name": "Rear-right",
-        "position": "Rear-right",
-        "mux_channel": 7,
-    },
-)
-
-I2C_SPEED_HZ = 400_000
-TOF_PACKET_SIZE = 128
-REQUESTED_RANGING_FREQUENCY_HZ = 30
-INTEGRATION_TIME_MS = 20
-
-# This is a measured acquisition-side benchmark result, not a configured value.
-MEASURED_RETRIEVED_RATE_HZ = 14.0
+TOF_SENSOR_NAME = "Prototype ToF"
 
 
 ###############################################################################
 # Sensor Image
 ###############################################################################
 
-IMAGE_ROWS = 4
-IMAGE_COLS = 4
-NUM_ZONES = 16
-TOTAL_ZONES = NUM_SENSORS * NUM_ZONES
+IMAGE_ROWS = 8
+
+IMAGE_COLS = 8
+
+NUM_ZONES = 64
 
 
 ###############################################################################
@@ -124,32 +70,15 @@ TOTAL_ZONES = NUM_SENSORS * NUM_ZONES
 
 TOF_SECTOR_COUNT = 3
 
-SECTOR_NAMES = (
-    "S0",
-    "S1",
-    "S2",
-)
+SECTOR_NAMES = [
 
-# IMPORTANT:
-#
-# These ranges apply AFTER the existing left-right orientation correction
-# (np.flip / np.fliplr equivalent).
-#
-# 4x4 oriented image:
-#
-#     column 0       columns 1-2       column 3
-#        S0               S1              S2
-#
-# Therefore:
-#   S0 = left-most column       = 4 zones
-#   S1 = middle two columns     = 8 zones
-#   S2 = right-most column      = 4 zones
-#
-SECTOR_RANGES = (
-    (0, 1),
-    (1, 3),
-    (3, 4),
-)
+    "Sector 0",
+
+    "Sector 1",
+
+    "Sector 2"
+
+]
 
 
 ###############################################################################
@@ -164,7 +93,9 @@ TOF_HISTORY_SIZE = 20
 ###############################################################################
 
 VELOCITY_WINDOW = 5
+
 MIN_VALID_DT = 0.02
+
 STATIONARY_THRESHOLD = 50.0
 
 
@@ -173,14 +104,21 @@ STATIONARY_THRESHOLD = 50.0
 ###############################################################################
 
 MOTION_APPROACHING = "Approaching"
+
 MOTION_STATIONARY = "Stationary"
+
 MOTION_RECEDING = "Receding"
+
 MOTION_UNKNOWN = "Unknown"
 
 MOTION_STATES = (
+
     MOTION_APPROACHING,
+
     MOTION_STATIONARY,
-    MOTION_RECEDING,
+
+    MOTION_RECEDING
+
 )
 
 
@@ -188,26 +126,32 @@ MOTION_STATES = (
 # Motion Persistence Configuration
 ###############################################################################
 
-# Motion persistence is a bounded temporal consistency / evidence score.
-# It is not a probability and it is not a percentage.
+#
+# Motion persistence is a bounded evidence score.
+#
+# It is not a percentage.
+#
+# Range:
+#
+#     0 ... 100
+#
 
 MOTION_PERSISTENCE_MIN = 0
+
 MOTION_PERSISTENCE_MAX = 100
+
 MOTION_PERSISTENCE_STEP = 1
 
 
 ###############################################################################
-# Dashboard / Logging Configuration
+# Dashboard Configuration
 ###############################################################################
 
+SHOW_HEATMAP = True
+
+SHOW_JSON = True
+
 REFRESH_PERIOD = 0.02
-
-# Full six-sensor logging every observation would itself become a bottleneck.
-DEBUG_LOG_PERIOD = 1.0
-
-# The Observation Engine can process every received observation while the
-# browser payload is capped to a responsive but lighter 10 Hz.
-UI_PUBLISH_PERIOD = 0.10
 
 
 ###############################################################################
@@ -215,6 +159,7 @@ UI_PUBLISH_PERIOD = 0.10
 ###############################################################################
 
 MAX_DISTANCE_MM = 3000
+
 INVALID_DISTANCE_MM = 4000
 
 
@@ -222,23 +167,44 @@ INVALID_DISTANCE_MM = 4000
 # Confidence Configuration
 ###############################################################################
 
-# These are the same engineering normalization references used in v2.3.0.
-# They were derived from earlier datasets and should be recalibrated later
-# using representative 4x4 data. Confidence is an engineering measurement-
-# quality heuristic; it is not a probability.
+#
+# Initial normalization references.
+#
+# These are engineering values based on the
+# VL53L5CX datasets collected so far.
+#
+# They can later be recalibrated.
+#
 
 CONF_SIGNAL_REFERENCE = 1000.0
+
 CONF_SIGMA_REFERENCE = 64.0
+
 CONF_AMBIENT_REFERENCE = 128.0
+
 CONF_REFLECTANCE_REFERENCE = 255.0
+
 CONF_SPADS_REFERENCE = 3840.0
 
+
+#
+# Confidence fusion weights
+#
+# Sum = 100
+#
+
 CONF_WEIGHT_STATUS = 30.0
+
 CONF_WEIGHT_SIGNAL = 30.0
+
 CONF_WEIGHT_SIGMA = 20.0
+
 CONF_WEIGHT_AMBIENT = 5.0
+
 CONF_WEIGHT_REFLECTANCE = 5.0
+
 CONF_WEIGHT_TARGETS = 5.0
+
 CONF_WEIGHT_SPADS = 5.0
 
 
@@ -255,83 +221,137 @@ ui = WebUI()
 
 @dataclass
 class ToFFrame:
-    sensor_index: int
-    sensor_id: str
-    sensor_name: str
-    position: str
-    mux_channel: int
+    """
+    Complete synchronized VL53L5CX snapshot.
+    """
 
     frame_number: int
+
     timestamp: int
 
     distance: np.ndarray
+
     signal: np.ndarray
+
     sigma: np.ndarray
+
     status: np.ndarray
+
     reflectance: np.ndarray
+
     ambient: np.ndarray
+
     targets: np.ndarray
+
     spads: np.ndarray
+
     confidence: np.ndarray
 
 
 @dataclass
-class MultiToFFrame:
-    observation_number: int
-    timestamp: int
-    sensor_frames: list
-
-
-@dataclass
 class SectorObservation:
+    """
+    Logical sector observation.
+    """
+
     sector_id: int
+
     sector_name: str
 
     distance_mm: int
+
     zone_id: int = -1
 
     confidence: float = 0.0
 
+    # VL53L5CX target return signal rate per SPAD.
     signal_kcps_per_spad: int = 0
+
     sigma: int = 0
+
     target_status: int = 255
+
     reflectance: int = 0
+
+    # VL53L5CX ambient photon rate per SPAD.
     ambient_kcps_per_spad: int = 0
+
     targets: int = 0
+
     spads: int = 0
 
     velocity_mmps: float = 0.0
+
+    #
+    # True only when velocity is calculated from
+    # two valid trusted sector observations.
+    #
+
     velocity_valid: bool = False
+
+    #
+    # Current velocity-derived motion classification.
+    #
+
     velocity_state: str = MOTION_UNKNOWN
 
-    motion_persistence: int = 0
-    approaching_persistence: int = 0
-    stationary_persistence: int = 0
-    receding_persistence: int = 0
+    #
+    # Persistence score corresponding to the
+    # current velocity state.
+    #
+    # Example:
+    #
+    #     Velocity State     : Approaching
+    #     Motion Persistence : 80
+    #
 
+    motion_persistence: int = 0
+
+    #
+    # Internal persistence counters exposed for
+    # debugging and future reasoning layers.
+    #
+
+    approaching_persistence: int = 0
+
+    stationary_persistence: int = 0
+
+    receding_persistence: int = 0
 
 @dataclass
 class ToFObservation:
-    sensor_index: int
+    """
+    Complete SixthSense ToF observation.
+    """
+
     sensor_id: str
+
     sensor_name: str
-    position: str
-    mux_channel: int
 
     status: str
+
     frame_number: int
+
     timestamp: int
+
     fps: float
 
     sectors: list
+
     history_size: int = 0
 
 
-@dataclass
-class MultiToFObservation:
-    observation_number: int
-    timestamp: int
-    sensors: list
+###############################################################################
+# Global State
+###############################################################################
+
+last_frame_counter = -1
+
+last_timestamp = None
+
+fps = 0.0
+
+last_wait_log_time = 0.0
 
 
 ###############################################################################
@@ -339,77 +359,245 @@ class MultiToFObservation:
 ###############################################################################
 
 class ConfidenceEngine:
+    """
+    Estimate confidence for every VL53L5CX zone.
+
+    Output range:
+
+        0.0 ... 100.0
+    """
+
+    ###########################################################################
+    # Clamp
+    ###########################################################################
 
     @staticmethod
-    def _clamp(value):
+    def _clamp(
+        value
+    ):
+
         return max(
+
             0.0,
+
             min(
                 1.0,
-                float(value),
-            ),
+                float(
+                    value
+                )
+            )
+
         )
 
-    def normalize_status(self, status):
-        status = int(status)
+    ###########################################################################
+    # Target Status
+    ###########################################################################
+
+    def normalize_status(
+        self,
+        status
+    ):
+        """
+        VL53L5CX documentation interpretation:
+
+        status 5:
+            100% status validity
+
+        status 6 or 9:
+            50% confidence
+
+        all other statuses:
+            below 50%.
+
+        For this conservative implementation,
+        undocumented lower-confidence statuses
+        are assigned zero.
+        """
+
+        status = int(
+            status
+        )
 
         if status == 5:
+
             return 1.0
 
-        if status in (6, 9):
+        if status in (
+            6,
+            9
+        ):
+
             return 0.5
 
         return 0.0
 
-    def normalize_signal(self, signal):
-        signal = float(signal)
+    ###########################################################################
+    # Signal
+    ###########################################################################
+
+    def normalize_signal(
+        self,
+        signal
+    ):
+
+        signal = float(
+            signal
+        )
 
         if signal <= 0.0:
+
             return 0.0
 
         score = (
-            math.log10(signal + 1.0)
+
+            math.log10(
+                signal
+                +
+                1.0
+            )
+
             /
-            math.log10(CONF_SIGNAL_REFERENCE + 1.0)
+
+            math.log10(
+                CONF_SIGNAL_REFERENCE
+                +
+                1.0
+            )
+
         )
 
-        return self._clamp(score)
-
-    def normalize_sigma(self, sigma):
         return self._clamp(
+            score
+        )
+
+    ###########################################################################
+    # Sigma
+    ###########################################################################
+
+    def normalize_sigma(
+        self,
+        sigma
+    ):
+
+        score = (
+
             1.0
+
             -
-            float(sigma)
+
+            float(
+                sigma
+            )
+
             /
+
             CONF_SIGMA_REFERENCE
+
         )
 
-    def normalize_ambient(self, ambient):
         return self._clamp(
+            score
+        )
+
+    ###########################################################################
+    # Ambient
+    ###########################################################################
+
+    def normalize_ambient(
+        self,
+        ambient
+    ):
+
+        score = (
+
             1.0
+
             -
-            float(ambient)
+
+            float(
+                ambient
+            )
+
             /
+
             CONF_AMBIENT_REFERENCE
+
         )
 
-    def normalize_reflectance(self, reflectance):
         return self._clamp(
-            float(reflectance)
+            score
+        )
+
+    ###########################################################################
+    # Reflectance
+    ###########################################################################
+
+    def normalize_reflectance(
+        self,
+        reflectance
+    ):
+
+        score = (
+
+            float(
+                reflectance
+            )
+
             /
+
             CONF_REFLECTANCE_REFERENCE
+
         )
 
-    @staticmethod
-    def normalize_targets(targets):
-        return 1.0 if int(targets) > 0 else 0.0
-
-    def normalize_spads(self, spads):
         return self._clamp(
-            float(spads)
-            /
-            CONF_SPADS_REFERENCE
+            score
         )
+
+    ###########################################################################
+    # Targets
+    ###########################################################################
+
+    def normalize_targets(
+        self,
+        targets
+    ):
+
+        if int(
+            targets
+        ) > 0:
+
+            return 1.0
+
+        return 0.0
+
+    ###########################################################################
+    # SPADs
+    ###########################################################################
+
+    def normalize_spads(
+        self,
+        spads
+    ):
+
+        score = (
+
+            float(
+                spads
+            )
+
+            /
+
+            CONF_SPADS_REFERENCE
+
+        )
+
+        return self._clamp(
+            score
+        )
+
+    ###########################################################################
+    # Calculate One Zone
+    ###########################################################################
 
     def calculate(
         self,
@@ -420,65 +608,143 @@ class ConfidenceEngine:
         reflectance,
         ambient,
         targets,
-        spads,
+        spads
     ):
-        distance = int(distance)
-        targets = int(targets)
+
+        distance = int(
+            distance
+        )
+
+        targets = int(
+            targets
+        )
+
+        #######################################################################
+        # Fundamental validity gates
+        #######################################################################
 
         if distance <= 0:
+
             return 0.0
 
         if distance > MAX_DISTANCE_MM:
+
             return 0.0
 
         if targets <= 0:
+
             return 0.0
 
-        status_score = self.normalize_status(status)
+        #######################################################################
+        # Status
+        #######################################################################
+
+        status_score = self.normalize_status(
+            status
+        )
 
         if status_score <= 0.0:
+
             return 0.0
 
+        #######################################################################
+        # Continuous quality scores
+        #######################################################################
+
+        signal_score = self.normalize_signal(
+            signal
+        )
+
+        sigma_score = self.normalize_sigma(
+            sigma
+        )
+
+        ambient_score = self.normalize_ambient(
+            ambient
+        )
+
+        reflectance_score = (
+            self.normalize_reflectance(
+                reflectance
+            )
+        )
+
+        target_score = self.normalize_targets(
+            targets
+        )
+
+        spad_score = self.normalize_spads(
+            spads
+        )
+
+        #######################################################################
+        # Weighted fusion
+        #######################################################################
+
         score = (
+
             CONF_WEIGHT_STATUS
             *
             status_score
+
             +
+
             CONF_WEIGHT_SIGNAL
             *
-            self.normalize_signal(signal)
+            signal_score
+
             +
+
             CONF_WEIGHT_SIGMA
             *
-            self.normalize_sigma(sigma)
+            sigma_score
+
             +
+
             CONF_WEIGHT_AMBIENT
             *
-            self.normalize_ambient(ambient)
+            ambient_score
+
             +
+
             CONF_WEIGHT_REFLECTANCE
             *
-            self.normalize_reflectance(reflectance)
+            reflectance_score
+
             +
+
             CONF_WEIGHT_TARGETS
             *
-            self.normalize_targets(targets)
+            target_score
+
             +
+
             CONF_WEIGHT_SPADS
             *
-            self.normalize_spads(spads)
+            spad_score
+
         )
 
         return round(
+
             max(
+
                 0.0,
+
                 min(
                     100.0,
-                    score,
-                ),
+                    score
+                )
+
             ),
-            1,
+
+            1
+
         )
+
+    ###########################################################################
+    # Calculate Complete 8x8 Confidence Image
+    ###########################################################################
 
     def calculate_image(
         self,
@@ -489,34 +755,81 @@ class ConfidenceEngine:
         reflectance,
         ambient,
         targets,
-        spads,
+        spads
     ):
+
         result = np.zeros(
+
             (
                 IMAGE_ROWS,
-                IMAGE_COLS,
+                IMAGE_COLS
             ),
-            dtype=np.float32,
+
+            dtype=np.float32
+
         )
 
-        for row in range(IMAGE_ROWS):
-            for column in range(IMAGE_COLS):
+        for row in range(
+            IMAGE_ROWS
+        ):
+
+            for column in range(
+                IMAGE_COLS
+            ):
+
                 result[
                     row,
-                    column,
+                    column
                 ] = self.calculate(
-                    distance[row, column],
-                    signal[row, column],
-                    sigma[row, column],
-                    status[row, column],
-                    reflectance[row, column],
-                    ambient[row, column],
-                    targets[row, column],
-                    spads[row, column],
+
+                    distance[
+                        row,
+                        column
+                    ],
+
+                    signal[
+                        row,
+                        column
+                    ],
+
+                    sigma[
+                        row,
+                        column
+                    ],
+
+                    status[
+                        row,
+                        column
+                    ],
+
+                    reflectance[
+                        row,
+                        column
+                    ],
+
+                    ambient[
+                        row,
+                        column
+                    ],
+
+                    targets[
+                        row,
+                        column
+                    ],
+
+                    spads[
+                        row,
+                        column
+                    ]
+
                 )
 
         return result
 
+
+###############################################################################
+# Confidence Engine Instance
+###############################################################################
 
 confidence_engine = ConfidenceEngine()
 
@@ -526,30 +839,97 @@ confidence_engine = ConfidenceEngine()
 ###############################################################################
 
 class MotionPersistenceEngine:
+    """
+    Maintain independent bounded persistence counters
+    for Approaching, Stationary, and Receding motion.
 
-    def __init__(self):
+    Update rules:
+
+        Approaching:
+            Approaching += 1
+            Stationary  -= 1
+            Receding    -= 1
+
+        Stationary:
+            Approaching -= 1
+            Stationary  += 1
+            Receding    -= 1
+
+        Receding:
+            Approaching -= 1
+            Stationary  -= 1
+            Receding    += 1
+
+        Any other classification:
+            Approaching -= 1
+            Stationary  -= 1
+            Receding    -= 1
+
+    Every counter is saturated to the range 0 ... 100.
+
+    The score represents accumulated motion consistency.
+    It is not a percentage.
+    """
+
+    def __init__(
+        self
+    ):
+
         self.counters = {
+
             sector_id: {
-                MOTION_APPROACHING: 0,
-                MOTION_STATIONARY: 0,
-                MOTION_RECEDING: 0,
+
+                MOTION_APPROACHING:
+                    0,
+
+                MOTION_STATIONARY:
+                    0,
+
+                MOTION_RECEDING:
+                    0
+
             }
+
             for sector_id in range(
                 TOF_SECTOR_COUNT
             )
+
         }
 
+    ###########################################################################
+    # Clamp Counter
+    ###########################################################################
+
     @staticmethod
-    def _clamp(value):
+    def _clamp(
+        value
+    ):
+
         return max(
+
             MOTION_PERSISTENCE_MIN,
+
             min(
+
                 MOTION_PERSISTENCE_MAX,
-                int(value),
-            ),
+
+                int(
+                    value
+                )
+
+            )
+
         )
 
-    def update(self, sector):
+    ###########################################################################
+    # Update One Sector
+    ###########################################################################
+
+    def update(
+        self,
+        sector
+    ):
+
         counters = self.counters[
             sector.sector_id
         ]
@@ -558,287 +938,203 @@ class MotionPersistenceEngine:
             sector.velocity_state
         )
 
+        #######################################################################
+        # Recognized motion state
+        #######################################################################
+
         if current_state in MOTION_STATES:
+
             for state in MOTION_STATES:
+
                 if state == current_state:
-                    counters[state] = self._clamp(
-                        counters[state]
+
+                    counters[
+                        state
+                    ] = self._clamp(
+
+                        counters[
+                            state
+                        ]
+
                         +
+
                         MOTION_PERSISTENCE_STEP
+
                     )
+
                 else:
-                    counters[state] = self._clamp(
-                        counters[state]
+
+                    counters[
+                        state
+                    ] = self._clamp(
+
+                        counters[
+                            state
+                        ]
+
                         -
+
                         MOTION_PERSISTENCE_STEP
+
                     )
+
+        #######################################################################
+        # Any other motion classification
+        #######################################################################
+
         else:
+
             for state in MOTION_STATES:
-                counters[state] = self._clamp(
-                    counters[state]
+
+                counters[
+                    state
+                ] = self._clamp(
+
+                    counters[
+                        state
+                    ]
+
                     -
+
                     MOTION_PERSISTENCE_STEP
+
                 )
 
-        sector.approaching_persistence = counters[
-            MOTION_APPROACHING
-        ]
+        #######################################################################
+        # Copy all counters into sector observation
+        #######################################################################
 
-        sector.stationary_persistence = counters[
-            MOTION_STATIONARY
-        ]
+        sector.approaching_persistence = (
 
-        sector.receding_persistence = counters[
-            MOTION_RECEDING
-        ]
+            counters[
+                MOTION_APPROACHING
+            ]
+
+        )
+
+        sector.stationary_persistence = (
+
+            counters[
+                MOTION_STATIONARY
+            ]
+
+        )
+
+        sector.receding_persistence = (
+
+            counters[
+                MOTION_RECEDING
+            ]
+
+        )
+
+        #######################################################################
+        # Persistence for current motion state
+        #######################################################################
 
         if current_state in MOTION_STATES:
-            sector.motion_persistence = counters[
-                current_state
-            ]
+
+            sector.motion_persistence = (
+
+                counters[
+                    current_state
+                ]
+
+            )
+
         else:
+
             sector.motion_persistence = 0
 
-
 ###############################################################################
-# Build Sector Observations
-###############################################################################
-
-def build_sector_observation(
-    frame,
-    sector_id,
-    start_column,
-    end_column,
-):
-    distance_sector = frame.distance[
-        :,
-        start_column:end_column,
-    ]
-
-    confidence_sector = frame.confidence[
-        :,
-        start_column:end_column,
-    ]
-
-    valid = distance_sector.astype(
-        np.int32,
-        copy=True,
-    )
-
-    invalid_mask = (
-        (valid <= 0)
-        |
-        (valid > MAX_DISTANCE_MM)
-        |
-        (confidence_sector <= 0.0)
-    )
-
-    valid[
-        invalid_mask
-    ] = INVALID_DISTANCE_MM
-
-    local_index = int(
-        np.argmin(
-            valid
-        )
-    )
-
-    (
-        row,
-        local_column,
-    ) = np.unravel_index(
-        local_index,
-        valid.shape,
-    )
-
-    distance = int(
-        valid[
-            row,
-            local_column,
-        ]
-    )
-
-    if distance == INVALID_DISTANCE_MM:
-        return SectorObservation(
-            sector_id=sector_id,
-            sector_name=SECTOR_NAMES[
-                sector_id
-            ],
-            distance_mm=0,
-        )
-
-    oriented_column = (
-        start_column
-        +
-        local_column
-    )
-
-    # The Python image is horizontally flipped to create the established
-    # local orientation. Recover the sensor's raw zone ID for diagnostics.
-    raw_column = (
-        IMAGE_COLS
-        -
-        1
-        -
-        oriented_column
-    )
-
-    zone_id = (
-        row
-        *
-        IMAGE_COLS
-        +
-        raw_column
-    )
-
-    return SectorObservation(
-        sector_id=sector_id,
-        sector_name=SECTOR_NAMES[
-            sector_id
-        ],
-        distance_mm=distance,
-        zone_id=int(zone_id),
-        confidence=round(
-            float(
-                frame.confidence[
-                    row,
-                    oriented_column,
-                ]
-            ),
-            1,
-        ),
-        signal_kcps_per_spad=int(
-            frame.signal[
-                row,
-                oriented_column,
-            ]
-        ),
-        sigma=int(
-            frame.sigma[
-                row,
-                oriented_column,
-            ]
-        ),
-        target_status=int(
-            frame.status[
-                row,
-                oriented_column,
-            ]
-        ),
-        reflectance=int(
-            frame.reflectance[
-                row,
-                oriented_column,
-            ]
-        ),
-        ambient_kcps_per_spad=int(
-            frame.ambient[
-                row,
-                oriented_column,
-            ]
-        ),
-        targets=int(
-            frame.targets[
-                row,
-                oriented_column,
-            ]
-        ),
-        spads=int(
-            frame.spads[
-                row,
-                oriented_column,
-            ]
-        ),
-    )
-
-
-def build_sector_observations(frame):
-    sectors = []
-
-    for (
-        sector_id,
-        (
-            start_column,
-            end_column,
-        ),
-    ) in enumerate(
-        SECTOR_RANGES
-    ):
-        sectors.append(
-            build_sector_observation(
-                frame=frame,
-                sector_id=sector_id,
-                start_column=start_column,
-                end_column=end_column,
-            )
-        )
-
-    return sectors
-
-
-###############################################################################
-# Per-Sensor Observation Engine
+# Observation Engine
 ###############################################################################
 
 class ObservationEngine:
 
     def __init__(
-        self,
-        sensor_config,
+        self
     ):
-        self.sensor_config = (
-            sensor_config
-        )
 
         self.observation_history = deque(
             maxlen=TOF_HISTORY_SIZE
         )
 
         self.velocity_history = {
-            sector_id: deque(
+
+            0: deque(
+                maxlen=VELOCITY_WINDOW
+            ),
+
+            1: deque(
+                maxlen=VELOCITY_WINDOW
+            ),
+
+            2: deque(
                 maxlen=VELOCITY_WINDOW
             )
-            for sector_id in range(
-                TOF_SECTOR_COUNT
-            )
+
         }
 
         self.motion_persistence_engine = (
             MotionPersistenceEngine()
         )
 
-    def previous_observation(self):
+    ###########################################################################
+    # Previous Observation
+    ###########################################################################
+
+    def previous_observation(
+        self
+    ):
+
         if len(
             self.observation_history
         ) == 0:
+
             return None
 
         return self.observation_history[
             -1
         ]
 
+    ###########################################################################
+    # Process Frame
+    ###########################################################################
+
     def process_frame(
         self,
         frame,
-        current_fps,
+        current_fps
     ):
-        sectors = (
-            build_sector_observations(
-                frame
-            )
+
+        sectors = build_sector_observations(
+            frame
         )
 
         observation = ToFObservation(
-            sensor_index=frame.sensor_index,
-            sensor_id=frame.sensor_id,
-            sensor_name=frame.sensor_name,
-            position=frame.position,
-            mux_channel=frame.mux_channel,
-            status="ONLINE",
-            frame_number=frame.frame_number,
-            timestamp=frame.timestamp,
-            fps=current_fps,
-            sectors=sectors,
+
+            sensor_id=
+                TOF_SENSOR_ID,
+
+            sensor_name=
+                TOF_SENSOR_NAME,
+
+            status=
+                "ONLINE",
+
+            frame_number=
+                frame.frame_number,
+
+            timestamp=
+                frame.timestamp,
+
+            fps=
+                current_fps,
+
+            sectors=
+                sectors
+
         )
 
         self._estimate_velocity(
@@ -867,57 +1163,112 @@ class ObservationEngine:
 
         return observation
 
+    ###########################################################################
+    # Velocity Estimation
+    ###########################################################################
+
     def _estimate_velocity(
         self,
-        observation,
+        observation
     ):
+
         previous = (
             self.previous_observation()
         )
 
+        #######################################################################
+        # First observation
+        #
+        # Velocity cannot be calculated without a previous observation.
+        #######################################################################
+
         if previous is None:
+
             for sector in observation.sectors:
+
                 sector.velocity_mmps = 0.0
+
                 sector.velocity_valid = False
+
             return
 
         dt = (
+
             observation.timestamp
+
             -
+
             previous.timestamp
+
         ) / 1000.0
 
         if dt < MIN_VALID_DT:
+
             dt = MIN_VALID_DT
 
         for (
             current,
-            old,
+            old
         ) in zip(
+
             observation.sectors,
-            previous.sectors,
+
+            previous.sectors
+
         ):
+
+            ###################################################################
+            # Invalid measurement transition
+            #
+            # Confidence is used as a validity gate exactly as in v2.2.1.
+            # An invalid transition does not create a valid velocity sample.
+            ###################################################################
+
             if (
+
                 current.distance_mm <= 0
+
                 or
+
                 old.distance_mm <= 0
+
                 or
+
                 current.confidence <= 0.0
+
                 or
+
                 old.confidence <= 0.0
+
             ):
+
                 current.velocity_mmps = 0.0
+
                 current.velocity_valid = False
+
                 continue
 
+            ###################################################################
+            # Valid instantaneous velocity
+            ###################################################################
+
             velocity = (
+
                 current.distance_mm
+
                 -
+
                 old.distance_mm
+
             ) / dt
 
             current.velocity_mmps = velocity
+
             current.velocity_valid = True
+
+            ###################################################################
+            # Only valid velocity samples enter the smoothing history.
+            ###################################################################
 
             self.velocity_history[
                 current.sector_id
@@ -925,696 +1276,1215 @@ class ObservationEngine:
                 velocity
             )
 
+    ###########################################################################
+    # Velocity Smoothing
+    ###########################################################################
+
     def _filter_velocity(
         self,
-        observation,
+        observation
     ):
+
         for sector in observation.sectors:
+
+            #
+            # Do not use the stored velocity history when the
+            # current velocity transition itself is invalid.
+            #
+
             if not sector.velocity_valid:
+
                 sector.velocity_mmps = 0.0
+
                 continue
 
             history = self.velocity_history[
                 sector.sector_id
             ]
 
-            if len(history) == 0:
+            if len(
+                history
+            ) == 0:
+
                 continue
 
             sector.velocity_mmps = round(
-                sum(history)
+
+                sum(
+                    history
+                )
+
                 /
-                len(history),
-                1,
+
+                len(
+                    history
+                ),
+
+                1
+
             )
+
+    ###########################################################################
+    # Motion Classification
+    ###########################################################################
 
     def _classify_motion(
         self,
-        observation,
+        observation
     ):
+
         for sector in observation.sectors:
+
+            ###################################################################
+            # Invalid or unavailable velocity
+            #
+            # A numerical zero caused by an invalid transition is not treated
+            # as Stationary. It becomes Unknown.
+            ###################################################################
+
             if not sector.velocity_valid:
+
                 sector.velocity_state = (
                     MOTION_UNKNOWN
                 )
+
                 continue
 
+            ###################################################################
+            # Approaching
+            ###################################################################
+
             if (
+
                 sector.velocity_mmps
+
                 <
+
                 -STATIONARY_THRESHOLD
+
             ):
+
                 sector.velocity_state = (
                     MOTION_APPROACHING
                 )
 
+            ###################################################################
+            # Receding
+            ###################################################################
+
             elif (
+
                 sector.velocity_mmps
+
                 >
+
                 STATIONARY_THRESHOLD
+
             ):
+
                 sector.velocity_state = (
                     MOTION_RECEDING
                 )
 
+            ###################################################################
+            # Stationary
+            ###################################################################
+
             else:
+
                 sector.velocity_state = (
                     MOTION_STATIONARY
                 )
 
+    ###########################################################################
+    # Motion Persistence
+    ###########################################################################
+
     def _update_motion_persistence(
         self,
-        observation,
+        observation
     ):
+
         for sector in observation.sectors:
+
             self.motion_persistence_engine.update(
                 sector
             )
 
 
-observation_engines = [
-    ObservationEngine(
-        sensor_config
-    )
-    for sensor_config in SENSOR_CONFIGS
-]
-
-
 ###############################################################################
-# Global Runtime State
+# Observation Engine Instance
 ###############################################################################
 
-last_sensor_frame_numbers = [
-    None
-    for _ in range(
-        NUM_SENSORS
-    )
-]
-
-last_sensor_timestamps = [
-    None
-    for _ in range(
-        NUM_SENSORS
-    )
-]
-
-sensor_fps = [
-    0.0
-    for _ in range(
-        NUM_SENSORS
-    )
-]
-
-last_observation_number = -1
-last_debug_log_time = 0.0
-last_wait_log_time = 0.0
-last_ui_publish_time = 0.0
+observation_engine = ObservationEngine()
 
 
 ###############################################################################
 # Logging
 ###############################################################################
 
-def sensor_init_description(code):
-    descriptions = {
-        0: "initialization not completed",
-        1: "sensor initialized successfully",
-        -1: "mux channel selection failed",
-        -2: "sensor probe / begin failed",
-        -3: "128-byte packet-size configuration failed",
-        -4: "4x4 resolution configuration failed",
-        -5: "30 Hz ranging-frequency configuration failed",
-        -6: "20 ms integration-time configuration failed",
-        -7: "startRanging() failed",
-        -10: "I2C mux initialization failed",
-    }
+def log_wait(
+    message
+):
 
-    return descriptions.get(
-        int(code),
-        "unknown sensor initialization result",
-    )
-
-
-def maybe_log_wait_state():
     global last_wait_log_time
 
     now = time.time()
 
     if (
+
         now
         -
         last_wait_log_time
-        <
+
+        >=
+
         1.0
+
     ):
-        return
 
-    last_wait_log_time = now
-
-    try:
-        ready_flags = list(
-            Bridge.call(
-                "get_sensor_ready_flags"
-            )
-        )
-
-        init_codes = list(
-            Bridge.call(
-                "get_sensor_init_codes"
-            )
-        )
-
-        mux_errors = int(
-            Bridge.call(
-                "get_mux_select_errors"
-            )
-        )
-
-        read_errors = list(
-            Bridge.call(
-                "get_sensor_read_errors"
-            )
-        )
-
-    except Exception as exc:
         print(
-            "[TOF] Waiting for Arduino Bridge |",
-            exc,
-        )
-        return
-
-    if all(
-        int(flag) == 1
-        for flag in ready_flags
-    ):
-        print(
-            "[TOF] All six sensors online | waiting for next six-sensor observation",
-            "| mux errors:",
-            mux_errors,
-            "| read errors:",
-            read_errors,
-        )
-        return
-
-    print(
-        "[TOF] Sensor initialization state:"
-    )
-
-    for (
-        sensor_config,
-        ready,
-        code,
-    ) in zip(
-        SENSOR_CONFIGS,
-        ready_flags,
-        init_codes,
-    ):
-        print(
-            "   ",
-            sensor_config[
-                "sensor_id"
-            ],
-            sensor_config[
-                "position"
-            ],
-            "| ready:",
-            int(ready),
-            "| code:",
-            int(code),
-            "|",
-            sensor_init_description(
-                code
-            ),
+            message
         )
 
+        last_wait_log_time = now
 
-def log_multi_observation(
-    observation,
+
+def log_observation(
+    observation
 ):
-    global last_debug_log_time
-
-    now = time.time()
-
-    if (
-        now
-        -
-        last_debug_log_time
-        <
-        DEBUG_LOG_PERIOD
-    ):
-        return
-
-    last_debug_log_time = now
 
     print(
         "------------------------------------------------------------"
     )
 
     print(
-        "Observation:",
-        observation.observation_number,
+        "Frame:",
+        observation.frame_number,
         "| Timestamp:",
         observation.timestamp,
+        "| FPS:",
+        observation.fps,
+        "| History:",
+        observation.history_size
     )
 
-    for sensor in observation.sensors:
-        sector_text = []
-
-        for sector in sensor.sectors:
-            sector_text.append(
-                (
-                    f"{sector.sector_name}="
-                    f"{sector.distance_mm}mm,"
-                    f"C{sector.confidence:.1f},"
-                    f"{sector.velocity_state},"
-                    f"P{sector.motion_persistence}"
-                )
-            )
+    for sector in observation.sectors:
 
         print(
-            sensor.sensor_id,
-            sensor.position,
-            "| Frame:",
-            sensor.frame_number,
-            "| FPS:",
+
+            sector.sector_name,
+
+            ":",
+
+            sector.distance_mm,
+
+            "mm",
+
+            "| Confidence:",
+
+            sector.confidence,
+
+            "%",
+
+            "| Zone:",
+
+            sector.zone_id,
+
+            "| Status:",
+
+            sector.target_status,
+
+            "| Signal (kcps/SPAD):",
+
+            sector.signal_kcps_per_spad,
+
+            "| Sigma:",
+
+            sector.sigma,
+
+            "| Velocity:",
+
             round(
-                sensor.fps,
-                2,
+                sector.velocity_mmps,
+                1
             ),
-            "|",
-            " | ".join(
-                sector_text
-            ),
+
+            "mm/s",
+
+            "| Velocity State:",
+
+            sector.velocity_state,
+
+            "| Motion Persistence:",
+
+            sector.motion_persistence,
+
+            "| Counters A/S/R:",
+
+            str(
+                sector.approaching_persistence
+            )
+
+            +
+
+            "/"
+
+            +
+
+            str(
+                sector.stationary_persistence
+            )
+
+            +
+
+            "/"
+
+            +
+
+            str(
+                sector.receding_persistence
+            )
+
         )
 
 
 ###############################################################################
-# Bridge Array Conversion
+# Array Conversion
 ###############################################################################
 
-def bridge_array_to_numpy(
+def convert_array_to_image(
     values,
-    dtype,
-    expected_size,
+    dtype
 ):
+    """
+    Convert a 64-element Arduino Bridge value into an oriented 8x8 NumPy array.
+
+    RouterBridge may return:
+        - normal Python lists for uint16/int16/uint32 arrays
+        - bytes for uint8 arrays
+
+    Both representations are handled here.
+    """
+
     np_dtype = np.dtype(
         dtype
     )
+
+    ###########################################################################
+    # RouterBridge binary representation
+    ###########################################################################
 
     if isinstance(
         values,
         (
             bytes,
             bytearray,
-            memoryview,
-        ),
+            memoryview
+        )
     ):
-        array = np.frombuffer(
+
+        image = np.frombuffer(
             values,
-            dtype=np_dtype,
+            dtype=np_dtype
         )
+
+    ###########################################################################
+    # Normal list / tuple / array representation
+    ###########################################################################
+
     else:
-        array = np.asarray(
+
+        image = np.asarray(
             values,
-            dtype=np_dtype,
+            dtype=np_dtype
         )
 
-    if array.size != expected_size:
+    ###########################################################################
+    # Validate number of zones
+    ###########################################################################
+
+    if image.size != NUM_ZONES:
+
         raise ValueError(
-            "Invalid Bridge array size: expected "
+
+            "Invalid ToF array size: expected "
+
             +
-            str(expected_size)
+
+            str(
+                NUM_ZONES
+            )
+
             +
+
             ", received "
+
             +
-            str(array.size)
+
+            str(
+                image.size
+            )
+
         )
 
-    return array
+    ###########################################################################
+    # Convert 64 zones -> 8x8 image
+    ###########################################################################
 
-
-def convert_flat_array_to_sensor_images(
-    values,
-    dtype,
-):
-    array = bridge_array_to_numpy(
-        values=values,
-        dtype=dtype,
-        expected_size=TOTAL_ZONES,
-    )
-
-    images = array.reshape(
+    image = image.reshape(
         (
-            NUM_SENSORS,
             IMAGE_ROWS,
-            IMAGE_COLS,
+            IMAGE_COLS
         )
     )
 
-    # Preserve the orientation convention used by v2.3.0:
-    # flip left/right independently for every ToF image.
-    images = np.flip(
-        images,
-        axis=2,
+    ###########################################################################
+    # Correct sensor orientation
+    ###########################################################################
+
+    image = np.fliplr(
+        image
     )
 
-    return images.copy()
+    #
+    # Make an independent contiguous array.
+    #
+    # Useful because np.frombuffer() may reference
+    # the original Bridge binary buffer.
+    #
+
+    return image.copy()
 
 
 ###############################################################################
-# Read Immutable Six-Sensor Snapshot
+# Validate Snapshot
 ###############################################################################
 
-def read_multi_tof_snapshot():
+def validate_snapshot_arrays(
+    distance,
+    signal,
+    sigma,
+    status,
+    reflectance,
+    ambient,
+    targets,
+    spads
+):
+
+    arrays = {
+
+        "distance":
+            distance,
+
+        "signal":
+            signal,
+
+        "sigma":
+            sigma,
+
+        "status":
+            status,
+
+        "reflectance":
+            reflectance,
+
+        "ambient":
+            ambient,
+
+        "targets":
+            targets,
+
+        "spads":
+            spads
+
+    }
+
+    for (
+        name,
+        values
+    ) in arrays.items():
+
+        if values is None:
+
+            print(
+                "[TOF] Invalid array:",
+                name,
+                "is None"
+            )
+
+            return False
+
+        if len(
+            values
+        ) != NUM_ZONES:
+
+            print(
+                "[TOF] Invalid array:",
+                name,
+                "| expected:",
+                NUM_ZONES,
+                "| received:",
+                len(
+                    values
+                )
+            )
+
+            return False
+
+    return True
+
+
+###############################################################################
+# Sensor Initialization Description
+###############################################################################
+
+def sensor_init_description(
+    code
+):
+
+    descriptions = {
+
+        0:
+            "initialization not completed",
+
+        1:
+            "sensor initialized successfully",
+
+        -1:
+            "tof.begin() failed / sensor detection failed",
+
+        -2:
+            "8x8 resolution configuration failed",
+
+        -3:
+            "15 Hz ranging frequency configuration failed",
+
+        -4:
+            "20 ms integration time configuration failed",
+
+        -5:
+            "startRanging() failed"
+
+    }
+
+    return descriptions.get(
+
+        int(
+            code
+        ),
+
+        "unknown sensor initialization result"
+
+    )
+
+
+###############################################################################
+# Read Complete ToF Snapshot
+###############################################################################
+
+def read_tof_snapshot():
+
+    ###########################################################################
+    # Bridge diagnostics
+    ###########################################################################
 
     try:
-        pending_observation = int(
-            Bridge.call(
-                "get_pending_observation"
-            )
+
+        ready = Bridge.call(
+            "sensor_ready"
         )
 
-    except Exception:
-        maybe_log_wait_state()
+        init_code = Bridge.call(
+            "get_sensor_init_code"
+        )
+
+        live_counter = Bridge.call(
+            "get_live_frame_counter"
+        )
+
+    except Exception as e:
+
+        log_wait(
+
+            "[TOF] Waiting for Arduino Bridge | "
+
+            +
+
+            str(
+                e
+            )
+
+        )
+
         return None
 
-    if pending_observation == 0:
-        maybe_log_wait_state()
+    ###########################################################################
+    # Sensor initialization failed
+    ###########################################################################
+
+    if not ready:
+
+        log_wait(
+
+            "[TOF] Sensor initialization FAILED"
+
+            +
+
+            " | code = "
+
+            +
+
+            str(
+                init_code
+            )
+
+            +
+
+            " | "
+
+            +
+
+            sensor_init_description(
+                init_code
+            )
+
+        )
+
         return None
+
+    ###########################################################################
+    # Sensor initialized, but first frame not yet available
+    ###########################################################################
+
+    if live_counter == 0:
+
+        log_wait(
+
+            "[TOF] Sensor initialized successfully"
+
+            +
+
+            " | waiting for first ranging frame"
+
+        )
+
+        return None
+
+    ###########################################################################
+    # Capture coherent Arduino-side snapshot
+    ###########################################################################
 
     try:
-        observation_timestamp = int(
-            Bridge.call(
-                "get_observation_timestamp"
-            )
+
+        frame_counter = Bridge.call(
+            "capture_snapshot"
         )
 
-        frame_counters = list(
-            Bridge.call(
-                "get_sensor_frame_counters"
-            )
+        snapshot_counter = Bridge.call(
+            "get_snapshot_frame_counter"
         )
 
-        sensor_timestamps = list(
-            Bridge.call(
-                "get_sensor_timestamps"
-            )
+    except Exception as e:
+
+        print(
+            "[TOF] Snapshot capture error:",
+            e
         )
 
-        distance_raw = Bridge.call(
+        return None
+
+    ###########################################################################
+    # Validate metadata
+    ###########################################################################
+
+    if frame_counter == 0:
+
+        log_wait(
+            "[TOF] capture_snapshot() returned 0"
+        )
+
+        return None
+
+    if (
+        snapshot_counter
+        !=
+        frame_counter
+    ):
+
+        print(
+
+            "[TOF] Snapshot frame mismatch",
+
+            "| returned:",
+
+            frame_counter,
+
+            "| snapshot:",
+
+            snapshot_counter
+
+        )
+
+        return None
+
+    ###########################################################################
+    # Nothing new
+    ###########################################################################
+
+    if (
+        frame_counter
+        ==
+        last_frame_counter
+    ):
+
+        return None
+
+    ###########################################################################
+    # Read frozen snapshot
+    ###########################################################################
+
+    try:
+
+        timestamp = Bridge.call(
+            "get_timestamp"
+        )
+
+        distance = Bridge.call(
             "get_distance"
         )
 
-        signal_raw = Bridge.call(
+        signal = Bridge.call(
             "get_signal"
         )
 
-        sigma_raw = Bridge.call(
+        sigma = Bridge.call(
             "get_sigma"
         )
 
-        status_raw = Bridge.call(
+        status = Bridge.call(
             "get_status"
         )
 
-        reflectance_raw = Bridge.call(
+        reflectance = Bridge.call(
             "get_reflectance"
         )
 
-        ambient_raw = Bridge.call(
+        ambient = Bridge.call(
             "get_ambient"
         )
 
-        targets_raw = Bridge.call(
+        targets = Bridge.call(
             "get_targets"
         )
 
-        spads_raw = Bridge.call(
+        spads = Bridge.call(
             "get_spads"
         )
 
-    except Exception as exc:
+    except Exception as e:
+
         print(
-            "[TOF] Six-sensor snapshot read error:",
-            exc,
+            "[TOF] Snapshot read error:",
+            e
         )
+
         return None
 
-    if (
-        len(frame_counters)
-        !=
-        NUM_SENSORS
-        or
-        len(sensor_timestamps)
-        !=
-        NUM_SENSORS
+    ###########################################################################
+    # Validate arrays
+    ###########################################################################
+
+    if not validate_snapshot_arrays(
+
+        distance,
+
+        signal,
+
+        sigma,
+
+        status,
+
+        reflectance,
+
+        ambient,
+
+        targets,
+
+        spads
+
     ):
-        print(
-            "[TOF] Invalid six-sensor metadata."
-        )
+
         return None
 
-    try:
-        distance = convert_flat_array_to_sensor_images(
-            distance_raw,
-            np.int16,
+    ###########################################################################
+    # Convert to 8x8 images
+    ###########################################################################
+
+    distance_image = (
+        convert_array_to_image(
+            distance,
+            np.int16
         )
+    )
 
-        signal = convert_flat_array_to_sensor_images(
-            signal_raw,
-            np.uint32,
+    signal_image = (
+        convert_array_to_image(
+            signal,
+            np.uint32
         )
+    )
 
-        sigma = convert_flat_array_to_sensor_images(
-            sigma_raw,
-            np.uint16,
+    sigma_image = (
+        convert_array_to_image(
+            sigma,
+            np.uint16
         )
+    )
 
-        status = convert_flat_array_to_sensor_images(
-            status_raw,
-            np.uint8,
+    status_image = (
+        convert_array_to_image(
+            status,
+            np.uint8
         )
+    )
 
-        reflectance = convert_flat_array_to_sensor_images(
-            reflectance_raw,
-            np.uint8,
+    reflectance_image = (
+        convert_array_to_image(
+            reflectance,
+            np.uint8
         )
+    )
 
-        ambient = convert_flat_array_to_sensor_images(
-            ambient_raw,
-            np.uint32,
+    ambient_image = (
+        convert_array_to_image(
+            ambient,
+            np.uint32
         )
+    )
 
-        targets = convert_flat_array_to_sensor_images(
-            targets_raw,
-            np.uint8,
+    targets_image = (
+        convert_array_to_image(
+            targets,
+            np.uint8
         )
+    )
 
-        spads = convert_flat_array_to_sensor_images(
-            spads_raw,
-            np.uint32,
+    spads_image = (
+        convert_array_to_image(
+            spads,
+            np.uint32
         )
+    )
 
-    except Exception as exc:
-        print(
-            "[TOF] Snapshot conversion error:",
-            exc,
+    ###########################################################################
+    # Confidence image
+    ###########################################################################
+
+    confidence_image = (
+        confidence_engine.calculate_image(
+
+            distance_image,
+
+            signal_image,
+
+            sigma_image,
+
+            status_image,
+
+            reflectance_image,
+
+            ambient_image,
+
+            targets_image,
+
+            spads_image
+
         )
-        return None
+    )
 
-    # We have copied every published field into Python-owned memory.
-    # Release the one-slot MCU publication buffer before confidence / temporal
-    # processing and WebUI serialization.
-    try:
-        consumed = bool(
-            Bridge.call(
-                "consume_observation",
-                pending_observation,
-            )
-        )
+    ###########################################################################
+    # Build frame object
+    ###########################################################################
 
-    except Exception as exc:
-        print(
-            "[TOF] consume_observation error:",
-            exc,
-        )
-        return None
+    return ToFFrame(
 
-    if not consumed:
-        print(
-            "[TOF] consume_observation rejected observation",
-            pending_observation,
-        )
-        return None
+        frame_number=
+            int(
+                frame_counter
+            ),
 
-    sensor_frames = []
+        timestamp=
+            int(
+                timestamp
+            ),
 
-    for sensor_index in range(
-        NUM_SENSORS
-    ):
-        sensor_config = SENSOR_CONFIGS[
-            sensor_index
-        ]
+        distance=
+            distance_image,
 
-        confidence = (
-            confidence_engine.calculate_image(
-                distance[
-                    sensor_index
-                ],
-                signal[
-                    sensor_index
-                ],
-                sigma[
-                    sensor_index
-                ],
-                status[
-                    sensor_index
-                ],
-                reflectance[
-                    sensor_index
-                ],
-                ambient[
-                    sensor_index
-                ],
-                targets[
-                    sensor_index
-                ],
-                spads[
-                    sensor_index
-                ],
-            )
-        )
+        signal=
+            signal_image,
 
-        sensor_frames.append(
-            ToFFrame(
-                sensor_index=sensor_index,
-                sensor_id=sensor_config[
-                    "sensor_id"
-                ],
-                sensor_name=sensor_config[
-                    "sensor_name"
-                ],
-                position=sensor_config[
-                    "position"
-                ],
-                mux_channel=sensor_config[
-                    "mux_channel"
-                ],
-                frame_number=int(
-                    frame_counters[
-                        sensor_index
-                    ]
-                ),
-                timestamp=int(
-                    sensor_timestamps[
-                        sensor_index
-                    ]
-                ),
-                distance=distance[
-                    sensor_index
-                ],
-                signal=signal[
-                    sensor_index
-                ],
-                sigma=sigma[
-                    sensor_index
-                ],
-                status=status[
-                    sensor_index
-                ],
-                reflectance=reflectance[
-                    sensor_index
-                ],
-                ambient=ambient[
-                    sensor_index
-                ],
-                targets=targets[
-                    sensor_index
-                ],
-                spads=spads[
-                    sensor_index
-                ],
-                confidence=confidence,
-            )
-        )
+        sigma=
+            sigma_image,
 
-    return MultiToFFrame(
-        observation_number=pending_observation,
-        timestamp=observation_timestamp,
-        sensor_frames=sensor_frames,
+        status=
+            status_image,
+
+        reflectance=
+            reflectance_image,
+
+        ambient=
+            ambient_image,
+
+        targets=
+            targets_image,
+
+        spads=
+            spads_image,
+
+        confidence=
+            confidence_image
+
     )
 
 
 ###############################################################################
-# FPS Estimation
+# Build Sector Observation
 ###############################################################################
 
-def update_sensor_fps(
+def build_sector_observation(
     frame,
+    sector_id,
+    start_column,
+    end_column
 ):
-    sensor_index = (
-        frame.sensor_index
+
+    ###########################################################################
+    # Sector views
+    ###########################################################################
+
+    distance_sector = frame.distance[
+        :,
+        start_column:end_column
+    ]
+
+    confidence_sector = frame.confidence[
+        :,
+        start_column:end_column
+    ]
+
+    ###########################################################################
+    # Working distance array
+    ###########################################################################
+
+    valid = distance_sector.astype(
+        np.int32,
+        copy=True
     )
 
-    previous_frame_number = (
-        last_sensor_frame_numbers[
-            sensor_index
-        ]
+    ###########################################################################
+    # Reject unusable zones
+    ###########################################################################
+
+    invalid_mask = (
+
+        (
+            valid <= 0
+        )
+
+        |
+
+        (
+            valid > MAX_DISTANCE_MM
+        )
+
+        |
+
+        (
+            confidence_sector <= 0.0
+        )
+
     )
 
-    previous_timestamp = (
-        last_sensor_timestamps[
-            sensor_index
-        ]
+    valid[
+        invalid_mask
+    ] = INVALID_DISTANCE_MM
+
+    ###########################################################################
+    # Nearest trusted zone
+    ###########################################################################
+
+    local_index = int(
+
+        np.argmin(
+            valid
+        )
+
     )
+
+    (
+        row,
+        local_column
+    ) = np.unravel_index(
+
+        local_index,
+
+        valid.shape
+
+    )
+
+    distance = int(
+
+        valid[
+            row,
+            local_column
+        ]
+
+    )
+
+    ###########################################################################
+    # No trusted obstacle
+    ###########################################################################
 
     if (
-        previous_frame_number is not None
-        and
-        previous_timestamp is not None
+        distance
+        ==
+        INVALID_DISTANCE_MM
     ):
-        frame_delta = (
-            frame.frame_number
-            -
-            previous_frame_number
+
+        return SectorObservation(
+
+            sector_id=
+                sector_id,
+
+            sector_name=
+                SECTOR_NAMES[
+                    sector_id
+                ],
+
+            distance_mm=
+                0
+
         )
 
-        timestamp_delta = (
-            frame.timestamp
-            -
-            previous_timestamp
-        )
+    ###########################################################################
+    # Full oriented image column
+    ###########################################################################
 
-        if (
-            frame_delta > 0
-            and
-            timestamp_delta > 0
-        ):
-            # If Python skips an MCU publication while busy, frame_delta can
-            # exceed one. Including it preserves an estimate of the underlying
-            # MCU retrieved frame rate.
-            sensor_fps[
-                sensor_index
-            ] = round(
-                frame_delta
-                *
-                1000.0
-                /
-                timestamp_delta,
-                2,
+    column = (
+
+        start_column
+
+        +
+
+        local_column
+
+    )
+
+    ###########################################################################
+    # Recover original raw VL53L5CX zone ID
+    ###########################################################################
+
+    raw_column = (
+
+        IMAGE_COLS
+
+        -
+
+        1
+
+        -
+
+        column
+
+    )
+
+    zone_id = (
+
+        row
+
+        *
+
+        IMAGE_COLS
+
+        +
+
+        raw_column
+
+    )
+
+    ###########################################################################
+    # Build observation using same zone for all signals
+    ###########################################################################
+
+    return SectorObservation(
+
+        sector_id=
+            sector_id,
+
+        sector_name=
+            SECTOR_NAMES[
+                sector_id
+            ],
+
+        distance_mm=
+            distance,
+
+        zone_id=
+            int(
+                zone_id
+            ),
+
+        confidence=
+            round(
+
+                float(
+
+                    frame.confidence[
+                        row,
+                        column
+                    ]
+
+                ),
+
+                1
+
+            ),
+
+        signal_kcps_per_spad=
+            int(
+
+                frame.signal[
+                    row,
+                    column
+                ]
+
+            ),
+
+        sigma=
+            int(
+
+                frame.sigma[
+                    row,
+                    column
+                ]
+
+            ),
+
+        target_status=
+            int(
+
+                frame.status[
+                    row,
+                    column
+                ]
+
+            ),
+
+        reflectance=
+            int(
+
+                frame.reflectance[
+                    row,
+                    column
+                ]
+
+            ),
+
+        ambient_kcps_per_spad=
+            int(
+
+                frame.ambient[
+                    row,
+                    column
+                ]
+
+            ),
+
+        targets=
+            int(
+
+                frame.targets[
+                    row,
+                    column
+                ]
+
+            ),
+
+        spads=
+            int(
+
+                frame.spads[
+                    row,
+                    column
+                ]
+
             )
 
-    last_sensor_frame_numbers[
-        sensor_index
-    ] = frame.frame_number
+    )
 
-    last_sensor_timestamps[
-        sensor_index
-    ] = frame.timestamp
 
-    return sensor_fps[
-        sensor_index
+###############################################################################
+# Three Logical Sectors
+###############################################################################
+
+def build_sector_observations(
+    frame
+):
+
+    sector_ranges = [
+
+        (
+            0,
+            2
+        ),
+
+        (
+            2,
+            5
+        ),
+
+        (
+            5,
+            8
+        )
+
     ]
+
+    sectors = []
+
+    for (
+        sector_id,
+        (
+            start_column,
+            end_column
+        )
+    ) in enumerate(
+        sector_ranges
+    ):
+
+        sectors.append(
+
+            build_sector_observation(
+
+                frame=
+                    frame,
+
+                sector_id=
+                    sector_id,
+
+                start_column=
+                    start_column,
+
+                end_column=
+                    end_column
+
+            )
+
+        )
+
+    return sectors
 
 
 ###############################################################################
@@ -1622,9 +2492,11 @@ def update_sensor_fps(
 ###############################################################################
 
 def sector_to_dict(
-    sector,
+    sector
 ):
+
     return {
+
         "sector_id":
             sector.sector_id,
 
@@ -1640,7 +2512,7 @@ def sector_to_dict(
         "confidence":
             round(
                 sector.confidence,
-                1,
+                1
             ),
 
         "signal_kcps_per_spad":
@@ -1667,7 +2539,7 @@ def sector_to_dict(
         "velocity_mmps":
             round(
                 sector.velocity_mmps,
-                1,
+                1
             ),
 
         "velocity_valid":
@@ -1680,6 +2552,7 @@ def sector_to_dict(
             sector.motion_persistence,
 
         "motion_persistence_counters": {
+
             "approaching":
                 sector.approaching_persistence,
 
@@ -1687,29 +2560,24 @@ def sector_to_dict(
                 sector.stationary_persistence,
 
             "receding":
-                sector.receding_persistence,
-        },
+                sector.receding_persistence
+
+        }
+
     }
 
 
 def observation_to_dict(
-    observation,
+    observation
 ):
+
     return {
-        "sensor_index":
-            observation.sensor_index,
 
         "sensor_id":
             observation.sensor_id,
 
         "sensor_name":
             observation.sensor_name,
-
-        "position":
-            observation.position,
-
-        "mux_channel":
-            observation.mux_channel,
 
         "status":
             observation.status,
@@ -1727,28 +2595,152 @@ def observation_to_dict(
             observation.history_size,
 
         "sectors": [
+
             sector_to_dict(
                 sector
             )
+
             for sector in observation.sectors
-        ],
+
+        ]
+
     }
 
 
-def trusted_nearest_distance(
-    frame,
-):
+###############################################################################
+# Publish Frame
+###############################################################################
+
+def publish_frame():
+
+    global last_frame_counter
+
+    global last_timestamp
+
+    global fps
+
+    ###########################################################################
+    # Retrieve frame
+    ###########################################################################
+
+    frame = read_tof_snapshot()
+
+    if frame is None:
+
+        return
+
+    ###########################################################################
+    # FPS
+    ###########################################################################
+
+    if last_timestamp is not None:
+
+        dt = (
+
+            frame.timestamp
+
+            -
+
+            last_timestamp
+
+        )
+
+        if dt > 0:
+
+            fps = round(
+
+                1000.0
+
+                /
+
+                dt,
+
+                1
+
+            )
+
+    last_timestamp = (
+        frame.timestamp
+    )
+
+    last_frame_counter = (
+        frame.frame_number
+    )
+
+    ###########################################################################
+    # Observation Engine
+    ###########################################################################
+
+    observation = (
+        observation_engine.process_frame(
+
+            frame,
+
+            fps
+
+        )
+    )
+
+    ###########################################################################
+    # Debug Log
+    ###########################################################################
+
+    log_observation(
+        observation
+    )
+
+    ###########################################################################
+    # Dashboard Payload
+    ###########################################################################
+
+    message = {
+
+        "app_name":
+            APP_NAME,
+
+        "app_version":
+            APP_VERSION,
+
+        "image":
+            frame.distance.tolist(),
+
+        "confidence_image":
+            frame.confidence.tolist(),
+
+        "observation":
+            observation_to_dict(
+                observation
+            )
+
+    }
+
+    ###########################################################################
+    # Backward-Compatible Fields
+    ###########################################################################
+
     trusted = frame.distance.astype(
         np.int32,
-        copy=True,
+        copy=True
     )
 
     invalid = (
-        (trusted <= 0)
+
+        (
+            trusted <= 0
+        )
+
         |
-        (trusted > MAX_DISTANCE_MM)
+
+        (
+            trusted > MAX_DISTANCE_MM
+        )
+
         |
-        (frame.confidence <= 0.0)
+
+        (
+            frame.confidence <= 0.0
+        )
+
     )
 
     trusted[
@@ -1756,280 +2748,65 @@ def trusted_nearest_distance(
     ] = INVALID_DISTANCE_MM
 
     nearest = int(
+
         np.min(
             trusted
         )
+
     )
-
-    if nearest == INVALID_DISTANCE_MM:
-        return 0
-
-    return nearest
-
-
-###############################################################################
-# WebUI Payload
-###############################################################################
-
-def publish_webui(
-    frame,
-    observation,
-):
-    global last_ui_publish_time
-
-    now = time.time()
 
     if (
-        now
-        -
-        last_ui_publish_time
-        <
-        UI_PUBLISH_PERIOD
+        nearest
+        ==
+        INVALID_DISTANCE_MM
     ):
-        return
 
-    last_ui_publish_time = now
-
-    sensor_payloads = []
-
-    for (
-        sensor_frame,
-        sensor_observation,
-    ) in zip(
-        frame.sensor_frames,
-        observation.sensors,
-    ):
-        sensor_payloads.append(
-            {
-                "sensor_id":
-                    sensor_frame.sensor_id,
-
-                "sensor_name":
-                    sensor_frame.sensor_name,
-
-                "position":
-                    sensor_frame.position,
-
-                "mux_channel":
-                    sensor_frame.mux_channel,
-
-                "frame_number":
-                    sensor_frame.frame_number,
-
-                "timestamp":
-                    sensor_frame.timestamp,
-
-                "fps":
-                    sensor_observation.fps,
-
-                "image":
-                    sensor_frame.distance.tolist(),
-
-                "confidence_image":
-                    sensor_frame.confidence.tolist(),
-
-                "nearest":
-                    trusted_nearest_distance(
-                        sensor_frame
-                    ),
-
-                "observation":
-                    observation_to_dict(
-                        sensor_observation
-                    ),
-            }
-        )
-
-    message = {
-        "app_name":
-            APP_NAME,
-
-        "app_version":
-            APP_VERSION,
-
-        "observation_number":
-            observation.observation_number,
-
-        "timestamp":
-            observation.timestamp,
-
-        "configuration": {
-            "sensor_count":
-                NUM_SENSORS,
-
-            "resolution":
-                "4x4",
-
-            "zones_per_sensor":
-                NUM_ZONES,
-
-            "total_zones":
-                TOTAL_ZONES,
-
-            "requested_ranging_frequency_hz":
-                REQUESTED_RANGING_FREQUENCY_HZ,
-
-            "measured_retrieved_rate_hz_approx":
-                MEASURED_RETRIEVED_RATE_HZ,
-
-            "integration_time_ms":
-                INTEGRATION_TIME_MS,
-
-            "i2c_hz":
-                I2C_SPEED_HZ,
-
-            "packet_size_bytes":
-                TOF_PACKET_SIZE,
-
-            "sector_columns": {
-                "S0": [0],
-                "S1": [1, 2],
-                "S2": [3],
-            },
-        },
-
-        "sensors":
-            sensor_payloads,
-    }
-
-    # ------------------------------------------------------------------------
-    # Backward-compatible single-ToF dashboard fields
-    #
-    # Existing v2.3.0 UI can continue to display the FRONT sensor (T2)
-    # until the web frontend is upgraded for six ToFs.
-    # ------------------------------------------------------------------------
-
-    front_index = 1
-
-    front_frame = frame.sensor_frames[
-        front_index
-    ]
-
-    front_observation = observation.sensors[
-        front_index
-    ]
-
-    message[
-        "image"
-    ] = front_frame.distance.tolist()
-
-    message[
-        "confidence_image"
-    ] = front_frame.confidence.tolist()
-
-    message[
-        "observation"
-    ] = observation_to_dict(
-        front_observation
-    )
+        nearest = 0
 
     message[
         "frame"
-    ] = front_frame.frame_number
+    ] = frame.frame_number
+
+    message[
+        "timestamp"
+    ] = frame.timestamp
 
     message[
         "fps"
-    ] = front_observation.fps
+    ] = fps
 
     message[
         "nearest"
-    ] = trusted_nearest_distance(
-        front_frame
-    )
+    ] = nearest
 
     message[
         "left"
-    ] = front_observation.sectors[
+    ] = observation.sectors[
         0
     ].distance_mm
 
     message[
         "center"
-    ] = front_observation.sectors[
+    ] = observation.sectors[
         1
     ].distance_mm
 
     message[
         "right"
-    ] = front_observation.sectors[
+    ] = observation.sectors[
         2
     ].distance_mm
 
+    ###########################################################################
+    # Publish
+    ###########################################################################
+
     ui.send_message(
+
         "tof_frame",
-        message,
-    )
 
+        message
 
-###############################################################################
-# Process Multi-ToF Frame
-###############################################################################
-
-def process_multi_tof_frame(
-    frame,
-):
-    sensor_observations = []
-
-    for sensor_frame in frame.sensor_frames:
-        current_fps = update_sensor_fps(
-            sensor_frame
-        )
-
-        sensor_observations.append(
-            observation_engines[
-                sensor_frame.sensor_index
-            ].process_frame(
-                frame=sensor_frame,
-                current_fps=current_fps,
-            )
-        )
-
-    return MultiToFObservation(
-        observation_number=frame.observation_number,
-        timestamp=frame.timestamp,
-        sensors=sensor_observations,
-    )
-
-
-###############################################################################
-# Main Publish Function
-###############################################################################
-
-def publish_frame():
-
-    global last_observation_number
-
-    frame = (
-        read_multi_tof_snapshot()
-    )
-
-    if frame is None:
-        return
-
-    if (
-        frame.observation_number
-        ==
-        last_observation_number
-    ):
-        return
-
-    last_observation_number = (
-        frame.observation_number
-    )
-
-    observation = (
-        process_multi_tof_frame(
-            frame
-        )
-    )
-
-    log_multi_observation(
-        observation
-    )
-
-    publish_webui(
-        frame,
-        observation,
     )
 
 
@@ -2038,27 +2815,30 @@ def publish_frame():
 ###############################################################################
 
 def on_connect(
-    client,
+    client
 ):
+
     print(
         "Browser Connected:",
-        client,
+        client
     )
 
 
 def on_disconnect(
-    client,
+    client
 ):
+
     print(
         "Browser Disconnected:",
-        client,
+        client
     )
 
 
 def get_initial_state(
     client,
-    data,
+    data
 ):
+
     print(
         "Initial state requested."
     )
@@ -2108,7 +2888,7 @@ print(
 )
 
 print(
-    "Version                    :",
+    "Version       :",
     APP_VERSION
 )
 
@@ -2117,112 +2897,71 @@ print(
 )
 
 print(
-    "Sensors                    :",
-    NUM_SENSORS,
-    "x VL53L5CX"
+    "Sensor ID     :",
+    TOF_SENSOR_ID
 )
 
 print(
-    "Resolution                 : 4 x 4"
+    "Sensor Name   :",
+    TOF_SENSOR_NAME
 )
 
 print(
-    "Zones / sensor             :",
-    NUM_ZONES
+    "Sectors       :",
+    TOF_SECTOR_COUNT
 )
 
 print(
-    "Total zones                :",
-    TOTAL_ZONES
+    "History Size  :",
+    TOF_HISTORY_SIZE
 )
 
 print(
-    "Requested ranging rate     :",
-    REQUESTED_RANGING_FREQUENCY_HZ,
-    "Hz"
-)
-
-print(
-    "Measured retrieval (~)     :",
-    MEASURED_RETRIEVED_RATE_HZ,
-    "Hz / sensor"
-)
-
-print(
-    "Integration time           :",
-    INTEGRATION_TIME_MS,
-    "ms"
-)
-
-print(
-    "I2C                        :",
-    I2C_SPEED_HZ,
-    "Hz"
-)
-
-print(
-    "Packet size                :",
-    TOF_PACKET_SIZE,
-    "bytes"
+    "Refresh       :",
+    REFRESH_PERIOD,
+    "sec"
 )
 
 print()
 
 print(
-    "Mux mapping:"
-)
-
-for sensor in SENSOR_CONFIGS:
-    print(
-        " ",
-        sensor[
-            "sensor_id"
-        ],
-        "-> CH",
-        sensor[
-            "mux_channel"
-        ],
-        "->",
-        sensor[
-            "position"
-        ],
-        sep="",
-    )
-
-print()
-
-print(
-    "Sector mapping             : S0=col0, S1=cols1-2, S2=col3"
+    "Confidence Engine Enabled"
 )
 
 print(
-    "Observation Engine         : ENABLED"
+    "Velocity Estimation Enabled"
 )
 
 print(
-    "Confidence Engine          : ENABLED"
+    "Velocity Smoothing Enabled"
 )
 
 print(
-    "Velocity Estimation        : ENABLED"
+    "Motion Classification Enabled"
 )
 
 print(
-    "Velocity Smoothing         : ENABLED"
-)
-
-print(
-    "Motion Classification      : ENABLED"
-)
-
-print(
-    "Motion Persistence         : ENABLED"
+    "Motion Persistence Engine Enabled"
 )
 
 print()
 
 print(
-    "Waiting for Arduino Bridge / six ToF sensors..."
+    "Motion Persistence Range :",
+    MOTION_PERSISTENCE_MIN,
+    "...",
+    MOTION_PERSISTENCE_MAX
+)
+
+print(
+    "Motion Persistence Step  :",
+    MOTION_PERSISTENCE_STEP
+)
+
+print()
+
+print(
+    "Waiting for Arduino Bridge / ToF sensor..."
 )
 
 print()

@@ -1,9 +1,7 @@
 /******************************************************************************
  * SixthSense
- * Version : 3.0.0
+ * Version : 2.3.0
  * Dashboard Stylesheet
- *
- * Six-ToF / 4x4 Dashboard
  ******************************************************************************/
 
 /*****************************************************************************/
@@ -32,7 +30,6 @@
     --red: #b91c1c;
 }
 
-
 /*****************************************************************************/
 /* Reset                                                                     */
 /*****************************************************************************/
@@ -51,12 +48,6 @@ body
     color: var(--text-primary);
     line-height: 1.5;
 }
-
-button
-{
-    font: inherit;
-}
-
 
 /*****************************************************************************/
 /* Header                                                                    */
@@ -90,7 +81,6 @@ button
     color: #cbd5e1;
 }
 
-
 /*****************************************************************************/
 /* Dashboard Layout                                                          */
 /*****************************************************************************/
@@ -98,18 +88,12 @@ button
 #dashboard
 {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
     gap: var(--spacing);
     padding: var(--spacing);
     max-width: 1800px;
     margin: auto;
 }
-
-.full-width
-{
-    grid-column: 1 / -1;
-}
-
 
 /*****************************************************************************/
 /* Cards                                                                     */
@@ -145,58 +129,10 @@ button
 
 .card h2,
 .sector-card h3,
-.heatmap-panel h3,
-.subsection-title
+.heatmap-panel h3
 {
     user-select: none;
 }
-
-
-/*****************************************************************************/
-/* Fixed Configuration                                                       */
-/*****************************************************************************/
-
-.configuration-grid
-{
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-}
-
-.configuration-item
-{
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 12px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-}
-
-.configuration-item span
-{
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-}
-
-.configuration-item strong
-{
-    font-size: 0.95rem;
-}
-
-.mapping-note
-{
-    margin-top: 14px;
-    padding: 10px 12px;
-    border: 1px solid #dbeafe;
-    border-radius: 8px;
-    background: #eff6ff;
-    text-align: center;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 0.82rem;
-}
-
 
 /*****************************************************************************/
 /* Information Tables                                                        */
@@ -222,7 +158,7 @@ button
 .info-table td:first-child
 {
     color: var(--text-secondary);
-    width: 48%;
+    width: 45%;
 }
 
 .info-table td:last-child
@@ -231,238 +167,6 @@ button
     text-align: right;
 }
 
-
-/*****************************************************************************/
-/* Six-ToF Overview                                                          */
-/*****************************************************************************/
-
-.sensor-overview-grid
-{
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-}
-
-.sensor-overview-item
-{
-    appearance: none;
-    width: 100%;
-    text-align: left;
-    color: inherit;
-    background: #ffffff;
-    border: 1px solid var(--border-color);
-    border-radius: 9px;
-    padding: 14px;
-    cursor: pointer;
-    transition:
-        border-color 0.15s ease,
-        box-shadow 0.15s ease,
-        background-color 0.15s ease;
-}
-
-.sensor-overview-item:hover
-{
-    border-color: #93c5fd;
-    box-shadow: 0 2px 8px rgba(37,99,235,0.10);
-}
-
-.sensor-overview-item.selected
-{
-    border: 2px solid var(--blue);
-    background: #eff6ff;
-}
-
-.overview-header
-{
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: flex-start;
-}
-
-.overview-header > div
-{
-    display: flex;
-    flex-direction: column;
-}
-
-.overview-header strong
-{
-    font-size: 1.05rem;
-}
-
-.overview-header div span
-{
-    color: var(--text-secondary);
-    font-size: 0.82rem;
-}
-
-.overview-meta
-{
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin: 10px 0;
-    color: var(--text-secondary);
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 0.78rem;
-}
-
-.overview-meta span
-{
-    padding: 2px 6px;
-    background: #f1f5f9;
-    border-radius: 5px;
-}
-
-.overview-sector-grid
-{
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-}
-
-.overview-sector
-{
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 7px;
-    background: #f8fafc;
-    border-radius: 6px;
-    text-align: center;
-}
-
-.overview-sector span
-{
-    color: var(--text-secondary);
-    font-size: 0.72rem;
-}
-
-.overview-sector strong
-{
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 0.82rem;
-}
-
-.empty-state
-{
-    grid-column: 1 / -1;
-    padding: 24px;
-    text-align: center;
-    color: var(--text-secondary);
-}
-
-
-/*****************************************************************************/
-/* Selected Sensor                                                           */
-/*****************************************************************************/
-
-.selected-sensor-header
-{
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    justify-content: space-between;
-    flex-wrap: wrap;
-}
-
-.sensor-selector
-{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.sensor-select-button
-{
-    border: 1px solid #cbd5e1;
-    background: #ffffff;
-    color: var(--text-primary);
-    border-radius: 999px;
-    padding: 6px 10px;
-    cursor: pointer;
-    font-size: 0.78rem;
-    transition:
-        background-color 0.15s ease,
-        border-color 0.15s ease,
-        color 0.15s ease;
-}
-
-.sensor-select-button:hover
-{
-    border-color: #93c5fd;
-}
-
-.sensor-select-button.active
-{
-    background: var(--blue);
-    color: #ffffff;
-    border-color: var(--blue);
-}
-
-.selected-sensor-layout
-{
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 28px;
-}
-
-.subsection-title
-{
-    font-size: 0.95rem;
-    margin-bottom: 10px;
-}
-
-.sector-definition
-{
-    display: grid;
-    grid-template-columns: 1fr 2fr 1fr;
-    min-height: 120px;
-    border: 2px solid #64748b;
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.sector-definition-cell
-{
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    background: #f8fafc;
-    text-align: center;
-    padding: 8px;
-}
-
-.sector-definition-center
-{
-    border-left: 3px solid var(--red);
-    border-right: 3px solid var(--red);
-    background: #eff6ff;
-}
-
-.sector-definition-cell strong
-{
-    font-size: 1.15rem;
-}
-
-.sector-definition-cell span
-{
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-}
-
-.technical-note
-{
-    margin-top: 10px;
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    text-align: center;
-}
-
-
 /*****************************************************************************/
 /* Sector Cards                                                              */
 /*****************************************************************************/
@@ -470,7 +174,7 @@ button
 .sector-grid
 {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
 }
 
@@ -496,11 +200,21 @@ button
     padding: 10px 6px;
 }
 
+.sector-card .info-table td:first-child
+{
+    color: var(--text-secondary);
+    width: 42%;
+}
+
+.sector-card .info-table td:last-child
+{
+    text-align: right;
+}
+
 #observation-card
 {
     border-width: 2px;
 }
-
 
 /*****************************************************************************/
 /* Observation Values                                                        */
@@ -549,7 +263,6 @@ button
     letter-spacing: 0.3px;
 }
 
-
 /*****************************************************************************/
 /* Confidence Badges                                                         */
 /*****************************************************************************/
@@ -594,7 +307,6 @@ button
     border: 1px solid #cbd5e1;
 }
 
-
 /*****************************************************************************/
 /* Velocity State                                                            */
 /*****************************************************************************/
@@ -638,10 +350,19 @@ button
     border: 1px solid #cbd5e1;
 }
 
-
 /*****************************************************************************/
 /* Heatmaps                                                                  */
 /*****************************************************************************/
+
+#heatmap-card
+{
+    grid-column: span 2;
+}
+
+#heatmap-card .card-body
+{
+    display: block;
+}
 
 .heatmap-grid
 {
@@ -672,7 +393,7 @@ button
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: #ffffff;
-    width: min(100%, 480px);
+    width: min(100%, 512px);
     height: auto;
 }
 
@@ -682,7 +403,7 @@ button
     grid-template-columns: auto 1fr auto;
     gap: 10px;
     align-items: center;
-    width: min(100%, 480px);
+    width: min(100%, 512px);
     margin: 10px auto 0;
     color: var(--text-secondary);
     font-size: 0.8rem;
@@ -728,10 +449,14 @@ button
     text-align: center;
 }
 
-
 /*****************************************************************************/
 /* JSON Viewer                                                               */
 /*****************************************************************************/
+
+#json-card
+{
+    grid-column: span 2;
+}
 
 #observation-json
 {
@@ -741,10 +466,10 @@ button
     border-radius: 8px;
     overflow-x: auto;
     overflow-y: auto;
-    max-height: 480px;
+    max-height: 360px;
     font-family: Consolas, "Courier New", monospace;
-    font-size: 0.82rem;
-    line-height: 1.45;
+    font-size: 0.9rem;
+    line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
 }
@@ -766,6 +491,27 @@ button
     background: #374151;
 }
 
+/*****************************************************************************/
+/* System + Debug                                                            */
+/*****************************************************************************/
+
+#system-card,
+#debug-card
+{
+    min-height: 260px;
+}
+
+#system-card .info-table td:first-child,
+#debug-card .info-table td:first-child
+{
+    font-weight: 500;
+}
+
+#system-card .info-table td:last-child,
+#debug-card .info-table td:last-child
+{
+    font-family: Consolas, "Courier New", monospace;
+}
 
 /*****************************************************************************/
 /* Status Indicators                                                         */
@@ -774,31 +520,25 @@ button
 .status-online
 {
     color: #15803d;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 .status-offline
 {
     color: #dc2626;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 .status-warning
 {
     color: #d97706;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 .status-danger
 {
     color: #b91c1c;
-    font-weight: 700;
-}
-
-.status-unknown
-{
-    color: #475569;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 #sensor-status,
@@ -809,9 +549,8 @@ button
     font-weight: 700;
 }
 
-
 /*****************************************************************************/
-/* Monospace Runtime Values                                                  */
+/* Numeric Values                                                            */
 /*****************************************************************************/
 
 #sensor-frame,
@@ -819,9 +558,6 @@ button
 #sensor-fps,
 #history-size,
 #history-capacity,
-#online-sensor-count,
-#sensor-count,
-#observation-number,
 #message-count,
 #dashboard-version,
 #backend-version
@@ -829,7 +565,6 @@ button
     font-family: Consolas, "Courier New", monospace;
     font-weight: 600;
 }
-
 
 /*****************************************************************************/
 /* Smooth Dashboard Updates                                                  */
@@ -848,7 +583,6 @@ button
         border-color 0.15s ease;
 }
 
-
 /*****************************************************************************/
 /* Footer                                                                    */
 /*****************************************************************************/
@@ -866,7 +600,6 @@ button
     font-size: 0.9rem;
 }
 
-
 /*****************************************************************************/
 /* Responsive Layout                                                         */
 /*****************************************************************************/
@@ -878,24 +611,10 @@ button
         grid-template-columns: 1fr;
     }
 
-    .full-width
+    #heatmap-card,
+    #json-card
     {
         grid-column: span 1;
-    }
-
-    .configuration-grid
-    {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .sensor-overview-grid
-    {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .selected-sensor-layout
-    {
-        grid-template-columns: 1fr;
     }
 
     .sector-grid
@@ -909,8 +628,7 @@ button
     }
 }
 
-
-@media (max-width: 700px)
+@media (max-width: 768px)
 {
     #app-header
     {
@@ -929,38 +647,13 @@ button
 
     #dashboard
     {
-        padding: 10px;
-        gap: 10px;
+        padding: 12px;
+        gap: 12px;
     }
 
     .card-body
     {
         padding: 14px;
-    }
-
-    .configuration-grid
-    {
-        grid-template-columns: 1fr;
-    }
-
-    .sensor-overview-grid
-    {
-        grid-template-columns: 1fr;
-    }
-
-    .selected-sensor-header
-    {
-        align-items: flex-start;
-    }
-
-    .sensor-selector
-    {
-        width: 100%;
-    }
-
-    .sensor-select-button
-    {
-        flex: 1 1 45%;
     }
 
     .info-table td
@@ -976,6 +669,18 @@ button
         margin-bottom: 10px;
     }
 
+    .sector-card .info-table td:first-child,
+    .sector-card .info-table td:last-child
+    {
+        width: 100%;
+        text-align: left;
+    }
+
+    .confidence-badge
+    {
+        margin-left: 4px;
+    }
+
     #footer
     {
         flex-direction: column;
@@ -984,16 +689,15 @@ button
     }
 }
 
-
 /*****************************************************************************/
 /* Focus + Selection                                                         */
 /*****************************************************************************/
 
-.sensor-overview-item:focus-visible,
-.sensor-select-button:focus-visible
+button:focus,
+canvas:focus,
+span:focus
 {
-    outline: 3px solid #93c5fd;
-    outline-offset: 2px;
+    outline: none;
 }
 
 ::selection
@@ -1002,8 +706,7 @@ button
     color: white;
 }
 
-
 /*****************************************************************************/
 /* End of File                                                               */
-/* SixthSense Dashboard v3.0.0                                               */
+/* SixthSense Dashboard v2.3.0                                               */
 /*****************************************************************************/
