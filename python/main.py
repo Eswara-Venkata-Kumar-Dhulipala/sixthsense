@@ -25,6 +25,8 @@
 #   • Velocity estimation and smoothing
 #   • Motion classification
 #   • Motion persistence
+#   • Attention Engine with 18-sector motor mapping
+#   • Feedback Engine with four-bit MCU motor commands
 #   • Multi-sensor WebUI payload
 #
 ###############################################################################
@@ -192,8 +194,101 @@ MOTION_STATES = (
 # It is not a probability and it is not a percentage.
 
 MOTION_PERSISTENCE_MIN = 0
-MOTION_PERSISTENCE_MAX = 100
+MOTION_PERSISTENCE_MAX = 200
 MOTION_PERSISTENCE_STEP = 1
+
+
+###############################################################################
+# Attention / Feedback Configuration
+###############################################################################
+
+# MCU-friendly motor mask:
+#
+#   bit 0 -> M1 -> Front
+#   bit 1 -> M2 -> Left
+#   bit 2 -> M3 -> Rear
+#   bit 3 -> M4 -> Right
+
+MOTOR_COUNT = 4
+
+MOTOR_MASK_M1 = 1 << 0
+MOTOR_MASK_M2 = 1 << 1
+MOTOR_MASK_M3 = 1 << 2
+MOTOR_MASK_M4 = 1 << 3
+MOTOR_MASK_ALL = (
+    MOTOR_MASK_M1
+    |
+    MOTOR_MASK_M2
+    |
+    MOTOR_MASK_M3
+    |
+    MOTOR_MASK_M4
+)
+
+MOTOR_NAMES = (
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+)
+
+# A sector requests feedback only when BOTH conditions are true:
+#
+#   1. velocity_state == Approaching
+#   2. motion_persistence >= 100
+#
+# Motion persistence can continue accumulating to 200 after activation.
+ATTENTION_ACTIVATION_PERSISTENCE = 10
+
+# Re-send the current mask periodically. The MCU watchdog turns every motor off
+# if these keep-alive commands stop arriving.
+FEEDBACK_REFRESH_PERIOD = 0.50
+
+# Rows are T1..T6. Columns are S0..S2.
+# Multiple qualifying sectors are combined with bitwise OR.
+SECTOR_MOTOR_MASKS = (
+    # T1 Front-right
+    (
+        MOTOR_MASK_M4,
+        MOTOR_MASK_M1 | MOTOR_MASK_M4,
+        MOTOR_MASK_M1 | MOTOR_MASK_M4,
+    ),
+
+    # T2 Front
+    (
+        MOTOR_MASK_M1 | MOTOR_MASK_M4,
+        MOTOR_MASK_M1,
+        MOTOR_MASK_M1 | MOTOR_MASK_M2,
+    ),
+
+    # T3 Front-left
+    (
+        MOTOR_MASK_M1 | MOTOR_MASK_M2,
+        MOTOR_MASK_M1 | MOTOR_MASK_M2,
+        MOTOR_MASK_M2,
+    ),
+
+    # T4 Rear-left
+    (
+        MOTOR_MASK_M2,
+        MOTOR_MASK_M2 | MOTOR_MASK_M3,
+        MOTOR_MASK_M2 | MOTOR_MASK_M3,
+    ),
+
+    # T5 Rear
+    (
+        MOTOR_MASK_M2 | MOTOR_MASK_M3,
+        MOTOR_MASK_M3,
+        MOTOR_MASK_M3 | MOTOR_MASK_M4,
+    ),
+
+    # T6 Rear-right
+    (
+        MOTOR_MASK_M3 | MOTOR_MASK_M4,
+        MOTOR_MASK_M3 | MOTOR_MASK_M4,
+        MOTOR_MASK_M4,
+    ),
+)
 
 
 ###############################################################################
@@ -332,6 +427,24 @@ class MultiToFObservation:
     observation_number: int
     timestamp: int
     sensors: list
+
+
+@dataclass
+class AttentionSource:
+    sensor_index: int
+    sensor_id: str
+    sensor_position: str
+    sector_id: int
+    sector_name: str
+    velocity_state: str
+    motion_persistence: int
+    motor_mask: int
+
+
+@dataclass
+class AttentionDecision:
+    motor_mask: int
+    active_sources: list
 
 
 ###############################################################################
@@ -1001,6 +1114,218 @@ observation_engines = [
 
 
 ###############################################################################
+# Attention Engine
+###############################################################################
+
+def motor_names_from_mask(
+    motor_mask,
+):
+    motor_mask = int(
+        motor_mask
+    ) & MOTOR_MASK_ALL
+
+    return [
+        motor_name
+        for motor_index, motor_name in enumerate(
+            MOTOR_NAMES
+        )
+        if motor_mask & (1 << motor_index)
+    ]
+
+
+class AttentionEngine:
+
+    def evaluate(
+        self,
+        observation,
+    ):
+        motor_mask = 0
+        active_sources = []
+
+        for sensor in observation.sensors:
+            sensor_masks = SECTOR_MOTOR_MASKS[
+                sensor.sensor_index
+            ]
+
+            for sector in sensor.sectors:
+                if (
+                    sector.velocity_state
+                    !=
+                    MOTION_APPROACHING
+                ):
+                    continue
+
+                if (
+                    sector.motion_persistence
+                    <
+                    ATTENTION_ACTIVATION_PERSISTENCE
+                ):
+                    continue
+
+                sector_motor_mask = int(
+                    sensor_masks[
+                        sector.sector_id
+                    ]
+                )
+
+                motor_mask |= sector_motor_mask
+
+                active_sources.append(
+                    AttentionSource(
+                        sensor_index=sensor.sensor_index,
+                        sensor_id=sensor.sensor_id,
+                        sensor_position=sensor.position,
+                        sector_id=sector.sector_id,
+                        sector_name=sector.sector_name,
+                        velocity_state=sector.velocity_state,
+                        motion_persistence=(
+                            sector.motion_persistence
+                        ),
+                        motor_mask=sector_motor_mask,
+                    )
+                )
+
+        return AttentionDecision(
+            motor_mask=(
+                motor_mask
+                &
+                MOTOR_MASK_ALL
+            ),
+            active_sources=active_sources,
+        )
+
+
+attention_engine = AttentionEngine()
+
+
+###############################################################################
+# Feedback Engine
+###############################################################################
+
+class FeedbackEngine:
+
+    def __init__(self):
+        self.last_requested_mask = None
+        self.applied_motor_mask = 0
+        self.last_command_time = 0.0
+        self.last_command_ok = False
+        self.last_error_log_time = 0.0
+
+    def apply(
+        self,
+        attention_decision,
+    ):
+        requested_mask = int(
+            attention_decision.motor_mask
+        ) & MOTOR_MASK_ALL
+
+        now = time.time()
+
+        mask_changed = (
+            requested_mask
+            !=
+            self.last_requested_mask
+        )
+
+        refresh_due = (
+            now
+            -
+            self.last_command_time
+            >=
+            FEEDBACK_REFRESH_PERIOD
+        )
+
+        if not mask_changed and not refresh_due:
+            return self.last_command_ok
+
+        # Record the attempt before the Bridge call. If it fails, retry at the
+        # keep-alive interval instead of flooding the Bridge every frame.
+        self.last_requested_mask = requested_mask
+        self.last_command_time = now
+
+        try:
+            applied_mask = int(
+                Bridge.call(
+                    "set_motor_mask",
+                    requested_mask,
+                )
+            ) & MOTOR_MASK_ALL
+
+        except Exception as exc:
+            self.last_command_ok = False
+
+            if (
+                now
+                -
+                self.last_error_log_time
+                >=
+                1.0
+            ):
+                self.last_error_log_time = now
+
+                print(
+                    "[FEEDBACK] Motor command failed:",
+                    exc,
+                )
+
+            return False
+
+        self.applied_motor_mask = applied_mask
+        self.last_command_ok = (
+            applied_mask
+            ==
+            requested_mask
+        )
+
+        if not self.last_command_ok:
+            print(
+                "[FEEDBACK] Motor mask mismatch | requested:",
+                requested_mask,
+                "| applied:",
+                applied_mask,
+            )
+
+        return self.last_command_ok
+
+    def status_dict(self):
+        requested_mask = (
+            0
+            if self.last_requested_mask is None
+            else int(self.last_requested_mask)
+        )
+
+        return {
+            "command_ok":
+                self.last_command_ok,
+
+            "requested_motor_mask":
+                requested_mask,
+
+            "requested_motor_mask_hex":
+                f"0x{requested_mask:02X}",
+
+            "requested_motors":
+                motor_names_from_mask(
+                    requested_mask
+                ),
+
+            "applied_motor_mask":
+                self.applied_motor_mask,
+
+            "applied_motor_mask_hex":
+                f"0x{self.applied_motor_mask:02X}",
+
+            "applied_motors":
+                motor_names_from_mask(
+                    self.applied_motor_mask
+                ),
+        }
+
+
+feedback_engine = FeedbackEngine()
+
+
+###############################################################################
 # Global Runtime State
 ###############################################################################
 
@@ -1150,6 +1475,7 @@ def maybe_log_wait_state():
 
 def log_multi_observation(
     observation,
+    attention_decision,
 ):
     global last_debug_log_time
 
@@ -1206,6 +1532,25 @@ def log_multi_observation(
                 sector_text
             ),
         )
+
+    active_source_labels = [
+        (
+            f"{source.sensor_id}/"
+            f"{source.sector_name}"
+        )
+        for source in attention_decision.active_sources
+    ]
+
+    print(
+        "Attention | mask:",
+        f"0x{attention_decision.motor_mask:02X}",
+        "| motors:",
+        motor_names_from_mask(
+            attention_decision.motor_mask
+        ),
+        "| sources:",
+        active_source_labels,
+    )
 
 
 ###############################################################################
@@ -1735,6 +2080,76 @@ def observation_to_dict(
     }
 
 
+def attention_source_to_dict(
+    source,
+):
+    return {
+        "sensor_index":
+            source.sensor_index,
+
+        "sensor_id":
+            source.sensor_id,
+
+        "sensor_position":
+            source.sensor_position,
+
+        "sector_id":
+            source.sector_id,
+
+        "sector_name":
+            source.sector_name,
+
+        "velocity_state":
+            source.velocity_state,
+
+        "motion_persistence":
+            source.motion_persistence,
+
+        "motor_mask":
+            source.motor_mask,
+
+        "motor_mask_hex":
+            f"0x{source.motor_mask:02X}",
+
+        "motors":
+            motor_names_from_mask(
+                source.motor_mask
+            ),
+    }
+
+
+def attention_decision_to_dict(
+    decision,
+):
+    return {
+        "activation_rule": {
+            "velocity_state":
+                MOTION_APPROACHING,
+
+            "minimum_motion_persistence":
+                ATTENTION_ACTIVATION_PERSISTENCE,
+        },
+
+        "motor_mask":
+            decision.motor_mask,
+
+        "motor_mask_hex":
+            f"0x{decision.motor_mask:02X}",
+
+        "motors":
+            motor_names_from_mask(
+                decision.motor_mask
+            ),
+
+        "active_sources": [
+            attention_source_to_dict(
+                source
+            )
+            for source in decision.active_sources
+        ],
+    }
+
+
 def trusted_nearest_distance(
     frame,
 ):
@@ -1774,6 +2189,7 @@ def trusted_nearest_distance(
 def publish_webui(
     frame,
     observation,
+    attention_decision,
 ):
     global last_ui_publish_time
 
@@ -1886,10 +2302,31 @@ def publish_webui(
                 "S1": [1, 2],
                 "S2": [3],
             },
+
+            "motion_persistence_max":
+                MOTION_PERSISTENCE_MAX,
+
+            "attention_activation_persistence":
+                ATTENTION_ACTIVATION_PERSISTENCE,
+
+            "motor_mask_bits": {
+                "M1": MOTOR_MASK_M1,
+                "M2": MOTOR_MASK_M2,
+                "M3": MOTOR_MASK_M3,
+                "M4": MOTOR_MASK_M4,
+            },
         },
 
         "sensors":
             sensor_payloads,
+
+        "attention":
+            attention_decision_to_dict(
+                attention_decision
+            ),
+
+        "feedback":
+            feedback_engine.status_dict(),
     }
 
     # ------------------------------------------------------------------------
@@ -2023,13 +2460,25 @@ def publish_frame():
         )
     )
 
+    attention_decision = (
+        attention_engine.evaluate(
+            observation
+        )
+    )
+
+    feedback_engine.apply(
+        attention_decision
+    )
+
     log_multi_observation(
-        observation
+        observation,
+        attention_decision,
     )
 
     publish_webui(
         frame,
         observation,
+        attention_decision,
     )
 
 
@@ -2217,6 +2666,30 @@ print(
 
 print(
     "Motion Persistence         : ENABLED"
+)
+
+print(
+    "Motion Persistence Range   :",
+    MOTION_PERSISTENCE_MIN,
+    "to",
+    MOTION_PERSISTENCE_MAX,
+)
+
+print(
+    "Attention Engine           : ENABLED"
+)
+
+print(
+    "Attention Activation       : Approaching and persistence >=",
+    ATTENTION_ACTIVATION_PERSISTENCE,
+)
+
+print(
+    "Feedback Engine            : ENABLED"
+)
+
+print(
+    "Motor mask                 : bit0=M1, bit1=M2, bit2=M3, bit3=M4"
 )
 
 print()

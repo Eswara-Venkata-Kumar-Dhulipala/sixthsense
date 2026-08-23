@@ -28,7 +28,7 @@
         <h1>SixthSense</h1>
 
         <h2>
-            Six-ToF Confidence-Aware Temporal Observation Engine
+            Six-ToF Attention and Haptic Feedback Dashboard
         </h2>
 
         <div id="version-container">
@@ -102,6 +102,16 @@
                         <strong>128 bytes</strong>
                     </div>
 
+                    <div class="configuration-item">
+                        <span>Motion persistence</span>
+                        <strong>0–200 · activate at ≥100</strong>
+                    </div>
+
+                    <div class="configuration-item">
+                        <span>Haptic feedback</span>
+                        <strong>4 motors · 4-bit MCU mask</strong>
+                    </div>
+
                 </div>
 
                 <div class="mapping-note">
@@ -139,6 +149,203 @@
                     <div class="empty-state">
                         Waiting for six-sensor observations...
                     </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ====================================================== -->
+        <!-- Haptic Motor Feedback                                 -->
+        <!-- ====================================================== -->
+
+        <section
+            class="card full-width"
+            id="motor-feedback-card">
+
+            <div class="card-header motor-feedback-header">
+
+                <h2>Haptic Motor Feedback</h2>
+
+                <span
+                    id="motor-feedback-state"
+                    class="motor-feedback-state motor-state-waiting">
+                    WAITING FOR FEEDBACK
+                </span>
+
+            </div>
+
+            <div class="card-body motor-feedback-layout">
+
+                <div class="motor-map-panel">
+
+                    <p class="motor-map-caption">
+                        Top view — keep this orientation when the assembly is laid on the bed
+                    </p>
+
+                    <div
+                        id="motor-map"
+                        class="motor-map"
+                        role="img"
+                        aria-label="Top-view arrangement of four haptic motors">
+
+                        <span class="motor-direction-marker marker-front">
+                            FRONT
+                        </span>
+
+                        <span class="motor-direction-marker marker-left">
+                            LEFT
+                        </span>
+
+                        <span class="motor-direction-marker marker-rear">
+                            REAR
+                        </span>
+
+                        <span class="motor-direction-marker marker-right">
+                            RIGHT
+                        </span>
+
+                        <div
+                            id="motor-m1"
+                            class="motor-node motor-node-m1"
+                            data-motor-id="M1">
+
+                            <span class="motor-id">M1</span>
+                            <span class="motor-direction">Front</span>
+
+                            <strong
+                                id="motor-m1-state"
+                                class="motor-runtime-state">
+                                OFF
+                            </strong>
+
+                        </div>
+
+                        <div
+                            id="motor-m2"
+                            class="motor-node motor-node-m2"
+                            data-motor-id="M2">
+
+                            <span class="motor-id">M2</span>
+                            <span class="motor-direction">Left</span>
+
+                            <strong
+                                id="motor-m2-state"
+                                class="motor-runtime-state">
+                                OFF
+                            </strong>
+
+                        </div>
+
+                        <div
+                            id="motor-m3"
+                            class="motor-node motor-node-m3"
+                            data-motor-id="M3">
+
+                            <span class="motor-id">M3</span>
+                            <span class="motor-direction">Rear</span>
+
+                            <strong
+                                id="motor-m3-state"
+                                class="motor-runtime-state">
+                                OFF
+                            </strong>
+
+                        </div>
+
+                        <div
+                            id="motor-m4"
+                            class="motor-node motor-node-m4"
+                            data-motor-id="M4">
+
+                            <span class="motor-id">M4</span>
+                            <span class="motor-direction">Right</span>
+
+                            <strong
+                                id="motor-m4-state"
+                                class="motor-runtime-state">
+                                OFF
+                            </strong>
+
+                        </div>
+
+                        <div class="motor-map-center">
+                            <span>Vibrating</span>
+
+                            <strong id="active-motor-count">
+                                0 / 4
+                            </strong>
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="motor-feedback-details">
+
+                    <h3 class="subsection-title">
+                        Attention / MCU Feedback
+                    </h3>
+
+                    <div class="feedback-summary-grid">
+
+                        <div class="feedback-summary-item">
+                            <span>Attention result</span>
+
+                            <strong
+                                id="attention-status"
+                                class="status-unknown">
+                                WAITING
+                            </strong>
+                        </div>
+
+                        <div class="feedback-summary-item">
+                            <span>Requested mask</span>
+                            <strong id="requested-motor-mask">0x00</strong>
+                        </div>
+
+                        <div class="feedback-summary-item">
+                            <span>MCU-applied mask</span>
+                            <strong id="applied-motor-mask">0x00</strong>
+                        </div>
+
+                        <div class="feedback-summary-item">
+                            <span>Feedback command</span>
+
+                            <strong
+                                id="feedback-command-status"
+                                class="status-unknown">
+                                WAITING
+                            </strong>
+                        </div>
+
+                        <div class="feedback-summary-item feedback-summary-wide">
+                            <span>MCU-confirmed vibrating motors</span>
+                            <strong id="active-motor-names">None</strong>
+                        </div>
+
+                    </div>
+
+                    <h3 class="subsection-title source-title">
+                        Qualifying ToF Sectors
+                    </h3>
+
+                    <div
+                        id="attention-sources"
+                        class="attention-sources attention-sources-empty">
+                        No sector currently meets the activation rule.
+                    </div>
+
+                    <p class="activation-rule-note">
+                        Activation rule:
+                        <strong>Velocity State = Approaching</strong>
+                        and
+                        <strong>Motion Persistence ≥ 100</strong>.
+                        Persistence can continue to 200.
+                    </p>
 
                 </div>
 
@@ -743,6 +950,11 @@
                         <td>6 × temporal ToF + confidence + motion persistence</td>
                     </tr>
 
+                    <tr>
+                        <td>Attention / Feedback</td>
+                        <td>18 sectors → 4-bit motor mask → MCU PWM</td>
+                    </tr>
+
                 </table>
 
             </div>
@@ -759,7 +971,7 @@
     <footer id="footer">
         <div>SixthSense</div>
         <div>Arduino UNO Q</div>
-        <div>6 × VL53L5CX · 4×4 · Multi-ToF Observation Engine</div>
+        <div>6 × VL53L5CX · 4×4 · Attention + Haptic Feedback</div>
     </footer>
 
     <script src="app.js"></script>

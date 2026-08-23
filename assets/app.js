@@ -35,9 +35,35 @@ const INVALID_DISTANCE = 4000;
 const MAX_DISTANCE = 3000;
 
 const HISTORY_CAPACITY = 20;
+const MOTION_PERSISTENCE_MAX = 200;
 
 const CONFIDENCE_HIGH = 80;
 const CONFIDENCE_MEDIUM = 50;
+
+const MOTOR_MASK_ALL = 0x0F;
+
+const MOTOR_CONFIG = [
+    {
+        id: "M1",
+        direction: "Front",
+        bit: 0x01
+    },
+    {
+        id: "M2",
+        direction: "Left",
+        bit: 0x02
+    },
+    {
+        id: "M3",
+        direction: "Rear",
+        bit: 0x04
+    },
+    {
+        id: "M4",
+        direction: "Right",
+        bit: 0x08
+    }
+];
 
 
 /*****************************************************************************/
@@ -45,11 +71,8 @@ const CONFIDENCE_MEDIUM = 50;
 /*****************************************************************************/
 
 let socket = null;
-
 let lastMessage = null;
-
 let messageCount = 0;
-
 let connected = false;
 
 /*
@@ -78,6 +101,52 @@ const sensorOverviewGridElement =
 
 const sensorSelectorElement =
     byId("sensor-selector");
+
+
+/* Haptic Motor Feedback */
+
+const motorFeedbackStateElement =
+    byId("motor-feedback-state");
+
+const motorMapElement =
+    byId("motor-map");
+
+const activeMotorCountElement =
+    byId("active-motor-count");
+
+const attentionStatusElement =
+    byId("attention-status");
+
+const requestedMotorMaskElement =
+    byId("requested-motor-mask");
+
+const appliedMotorMaskElement =
+    byId("applied-motor-mask");
+
+const feedbackCommandStatusElement =
+    byId("feedback-command-status");
+
+const activeMotorNamesElement =
+    byId("active-motor-names");
+
+const attentionSourcesElement =
+    byId("attention-sources");
+
+const motorElements = MOTOR_CONFIG.map(
+    (motor) => ({
+        ...motor,
+
+        node:
+            byId(
+                `motor-${motor.id.toLowerCase()}`
+            ),
+
+        state:
+            byId(
+                `motor-${motor.id.toLowerCase()}-state`
+            )
+    })
+);
 
 
 /* Selected Sensor Information */
@@ -305,6 +374,92 @@ function validateObservation(
         &&
         observation.sectors.length === 3
     );
+}
+
+
+function normalizeMotorMask(
+    value
+)
+{
+    if (
+        value === null
+        ||
+        value === undefined
+        ||
+        value === ""
+    )
+    {
+        return null;
+    }
+
+    const mask =
+        Number(value);
+
+    if (!Number.isFinite(mask))
+        return null;
+
+    return (
+        Math.trunc(mask)
+        &
+        MOTOR_MASK_ALL
+    );
+}
+
+
+function formatMotorMask(
+    motorMask
+)
+{
+    const normalized =
+        normalizeMotorMask(
+            motorMask
+        );
+
+    if (normalized === null)
+        return "--";
+
+    return `0x${normalized
+        .toString(16)
+        .toUpperCase()
+        .padStart(2, "0")}`;
+}
+
+
+function motorNamesFromMask(
+    motorMask
+)
+{
+    const normalized =
+        normalizeMotorMask(
+            motorMask
+        );
+
+    if (normalized === null)
+        return [];
+
+    return MOTOR_CONFIG
+        .filter(
+            (motor) =>
+                Boolean(
+                    normalized
+                    &
+                    motor.bit
+                )
+        )
+        .map(
+            (motor) =>
+                motor.id
+        );
+}
+
+
+function formatMotorNames(
+    motorNames
+)
+{
+    return motorNames.length > 0
+        ? motorNames.join(" + ")
+        : "None";
 }
 
 
@@ -573,6 +728,11 @@ function initializeDashboard()
         "status-offline"
     );
 
+    setMotorFeedbackUnavailable(
+        "WAITING FOR FEEDBACK",
+        "motor-state-waiting"
+    );
+
     setupSensorSelector();
 
     console.log(
@@ -614,12 +774,493 @@ function updateDashboard(
         message
     );
 
+    updateMotorFeedback(
+        message
+    );
+
     updateSystemStatus(
         message
     );
 
     updateObservationJSON(
         message
+    );
+}
+
+
+/*****************************************************************************/
+/* Haptic Motor Feedback                                                     */
+/*****************************************************************************/
+
+function setMotorFeedbackHeadline(
+    value,
+    className
+)
+{
+    setStatus(
+        motorFeedbackStateElement,
+        value,
+        `motor-feedback-state ${className}`
+    );
+}
+
+
+function setMotorFeedbackUnavailable(
+    headline,
+    headlineClass
+)
+{
+    setMotorFeedbackHeadline(
+        headline,
+        headlineClass
+    );
+
+    if (motorMapElement)
+    {
+        motorMapElement.classList.remove(
+            "has-active"
+        );
+
+        motorMapElement.classList.toggle(
+            "feedback-fault",
+            headlineClass === "motor-state-fault"
+        );
+    }
+
+    motorElements.forEach(
+        (motor) =>
+        {
+            if (motor.node)
+            {
+                motor.node.classList.remove(
+                    "active"
+                );
+
+                motor.node.classList.add(
+                    "unavailable"
+                );
+
+                motor.node.setAttribute(
+                    "aria-label",
+                    `${motor.id} ${motor.direction}: feedback unavailable`
+                );
+            }
+
+            setText(
+                motor.state,
+                "--"
+            );
+        }
+    );
+
+    setText(
+        activeMotorCountElement,
+        "-- / 4"
+    );
+
+    setText(
+        attentionStatusElement,
+        "WAITING"
+    );
+
+    if (attentionStatusElement)
+    {
+        attentionStatusElement.className =
+            "status-unknown";
+    }
+
+    setText(
+        requestedMotorMaskElement,
+        "--"
+    );
+
+    setText(
+        appliedMotorMaskElement,
+        "--"
+    );
+
+    setText(
+        feedbackCommandStatusElement,
+        "UNAVAILABLE"
+    );
+
+    if (feedbackCommandStatusElement)
+    {
+        feedbackCommandStatusElement.className =
+            "status-unknown";
+    }
+
+    setText(
+        activeMotorNamesElement,
+        "Unknown"
+    );
+
+    renderAttentionSources(
+        []
+    );
+}
+
+
+function renderAttentionSources(
+    sources
+)
+{
+    if (!attentionSourcesElement)
+        return;
+
+    attentionSourcesElement.innerHTML =
+        "";
+
+    if (
+        !Array.isArray(sources)
+        ||
+        sources.length === 0
+    )
+    {
+        attentionSourcesElement.className =
+            "attention-sources attention-sources-empty";
+
+        attentionSourcesElement.textContent =
+            "No sector currently meets the activation rule.";
+
+        return;
+    }
+
+    attentionSourcesElement.className =
+        "attention-sources";
+
+    sources.forEach(
+        (source) =>
+        {
+            const sourceMask =
+                normalizeMotorMask(
+                    source?.motor_mask
+                );
+
+            const sourceMotors =
+                motorNamesFromMask(
+                    sourceMask
+                );
+
+            const chip =
+                document.createElement(
+                    "div"
+                );
+
+            chip.className =
+                "attention-source-chip";
+
+            const title =
+                document.createElement(
+                    "strong"
+                );
+
+            title.textContent =
+                `${source?.sensor_id ?? "--"} / ${source?.sector_name ?? "--"}`;
+
+            const detail =
+                document.createElement(
+                    "span"
+                );
+
+            detail.textContent =
+                `${source?.sensor_position ?? "--"} · P${source?.motion_persistence ?? 0}`;
+
+            const motors =
+                document.createElement(
+                    "span"
+                );
+
+            motors.className =
+                "attention-source-motors";
+
+            motors.textContent =
+                `→ ${formatMotorNames(sourceMotors)}`;
+
+            chip.append(
+                title,
+                detail,
+                motors
+            );
+
+            attentionSourcesElement.appendChild(
+                chip
+            );
+        }
+    );
+}
+
+
+function updateMotorFeedback(
+    message
+)
+{
+    const attention =
+        message?.attention
+        ??
+        null;
+
+    const feedback =
+        message?.feedback
+        ??
+        null;
+
+    const requestedMask =
+        normalizeMotorMask(
+            attention?.motor_mask
+            ??
+            feedback?.requested_motor_mask
+        );
+
+    const appliedMask =
+        normalizeMotorMask(
+            feedback?.applied_motor_mask
+        );
+
+    const feedbackAvailable =
+        Boolean(feedback)
+        &&
+        appliedMask !== null;
+
+    const commandOk =
+        feedbackAvailable
+        &&
+        feedback.command_ok === true;
+
+    if (!attention && !feedbackAvailable)
+    {
+        setMotorFeedbackUnavailable(
+            "MCU FEEDBACK UNAVAILABLE",
+            "motor-state-waiting"
+        );
+
+        return;
+    }
+
+    setText(
+        requestedMotorMaskElement,
+        formatMotorMask(
+            requestedMask
+        )
+    );
+
+    setText(
+        appliedMotorMaskElement,
+        feedbackAvailable
+            ? (
+                commandOk
+                    ? formatMotorMask(appliedMask)
+                    : `${formatMotorMask(appliedMask)} (last confirmed)`
+            )
+            : "--"
+    );
+
+    const requestedMotors =
+        motorNamesFromMask(
+            requestedMask
+        );
+
+    if (attentionStatusElement)
+    {
+        if (!attention)
+        {
+            setStatus(
+                attentionStatusElement,
+                "UNAVAILABLE",
+                "status-unknown"
+            );
+        }
+        else if (requestedMotors.length > 0)
+        {
+            setStatus(
+                attentionStatusElement,
+                "ATTENTION ACTIVE",
+                "status-danger"
+            );
+        }
+        else
+        {
+            setStatus(
+                attentionStatusElement,
+                "IDLE",
+                "status-online"
+            );
+        }
+    }
+
+    if (!feedbackAvailable)
+    {
+        setMotorFeedbackUnavailable(
+            "MCU FEEDBACK UNAVAILABLE",
+            "motor-state-waiting"
+        );
+
+        setText(
+            requestedMotorMaskElement,
+            formatMotorMask(
+                requestedMask
+            )
+        );
+
+        if (attentionStatusElement && attention)
+        {
+            setStatus(
+                attentionStatusElement,
+                requestedMotors.length > 0
+                    ? "ATTENTION ACTIVE"
+                    : "IDLE",
+                requestedMotors.length > 0
+                    ? "status-danger"
+                    : "status-online"
+            );
+        }
+
+        renderAttentionSources(
+            attention?.active_sources
+            ??
+            []
+        );
+
+        return;
+    }
+
+    if (!commandOk)
+    {
+        setStatus(
+            feedbackCommandStatusElement,
+            "COMMAND ERROR",
+            "status-danger"
+        );
+
+        setMotorFeedbackHeadline(
+            "FEEDBACK COMMAND ERROR",
+            "motor-state-fault"
+        );
+    }
+    else
+    {
+        setStatus(
+            feedbackCommandStatusElement,
+            "ACKNOWLEDGED",
+            "status-online"
+        );
+    }
+
+    /*
+     * Only a successful MCU acknowledgement is treated as confirmation
+     * that the applied mask represents the current motor state.
+     */
+    const confirmedMask =
+        commandOk
+            ? appliedMask
+            : 0;
+
+    const activeMotors =
+        motorNamesFromMask(
+            confirmedMask
+        );
+
+    motorElements.forEach(
+        (motor) =>
+        {
+            const active =
+                Boolean(
+                    confirmedMask
+                    &
+                    motor.bit
+                );
+
+            if (motor.node)
+            {
+                motor.node.classList.toggle(
+                    "active",
+                    active
+                );
+
+                motor.node.classList.toggle(
+                    "unavailable",
+                    !commandOk
+                );
+
+                motor.node.setAttribute(
+                    "aria-label",
+                    `${motor.id} ${motor.direction}: ${
+                        active
+                            ? "vibrating"
+                            : commandOk
+                                ? "off"
+                                : "feedback unavailable"
+                    }`
+                );
+            }
+
+            setText(
+                motor.state,
+                active
+                    ? "VIBRATING"
+                    : commandOk
+                        ? "OFF"
+                        : "--"
+            );
+        }
+    );
+
+    if (motorMapElement)
+    {
+        motorMapElement.classList.toggle(
+            "has-active",
+            activeMotors.length > 0
+        );
+
+        motorMapElement.classList.toggle(
+            "feedback-fault",
+            !commandOk
+        );
+
+        motorMapElement.setAttribute(
+            "aria-label",
+            commandOk
+                ? `Top-view motor arrangement. Vibrating motors: ${formatMotorNames(activeMotors)}.`
+                : "Top-view motor arrangement. Current MCU motor state is unavailable."
+        );
+    }
+
+    setText(
+        activeMotorCountElement,
+        commandOk
+            ? `${activeMotors.length} / 4`
+            : "-- / 4"
+    );
+
+    setText(
+        activeMotorNamesElement,
+        commandOk
+            ? formatMotorNames(activeMotors)
+            : "Unknown"
+    );
+
+    if (commandOk)
+    {
+        if (activeMotors.length > 0)
+        {
+            setMotorFeedbackHeadline(
+                `VIBRATING: ${formatMotorNames(activeMotors)}`,
+                "motor-state-active"
+            );
+        }
+        else
+        {
+            setMotorFeedbackHeadline(
+                "ALL MOTORS OFF",
+                "motor-state-idle"
+            );
+        }
+    }
+
+    renderAttentionSources(
+        attention?.active_sources
+        ??
+        []
     );
 }
 
@@ -1061,7 +1702,6 @@ function updateSector(
             0
         );
 
-
     setText(
         elements.distance,
         distance > 0
@@ -1072,7 +1712,6 @@ function updateSector(
             :
             "--"
     );
-
 
     setText(
         elements.confidence,
@@ -1087,7 +1726,6 @@ function updateSector(
             "0.0"
     );
 
-
     setText(
         elements.zone,
         Number(
@@ -1100,7 +1738,6 @@ function updateSector(
             :
             "--"
     );
-
 
     setText(
         elements.velocity,
@@ -1117,7 +1754,6 @@ function updateSector(
             "--"
     );
 
-
     setText(
         elements.persistence,
         Number.isFinite(
@@ -1127,7 +1763,7 @@ function updateSector(
             Math.max(
                 0,
                 Math.min(
-                    100,
+                    MOTION_PERSISTENCE_MAX,
                     Math.round(
                         persistence
                     )
@@ -1137,12 +1773,10 @@ function updateSector(
             "0"
     );
 
-
     const confidenceInfo =
         confidenceClassification(
             confidence
         );
-
 
     if (
         elements.confidenceLevel
@@ -1155,12 +1789,10 @@ function updateSector(
             `confidence-badge ${confidenceInfo.className}`;
     }
 
-
     const velocityState =
         sector.velocity_state
         ??
         "Unknown";
-
 
     if (
         elements.velocityState
@@ -1171,7 +1803,6 @@ function updateSector(
 
         elements.velocityState.className =
             "state-value";
-
 
         switch (
             velocityState
@@ -1185,7 +1816,6 @@ function updateSector(
 
                 break;
 
-
             case "Receding":
 
                 elements.velocityState.classList.add(
@@ -1194,7 +1824,6 @@ function updateSector(
 
                 break;
 
-
             case "Stationary":
 
                 elements.velocityState.classList.add(
@@ -1202,7 +1831,6 @@ function updateSector(
                 );
 
                 break;
-
 
             default:
 
@@ -1238,7 +1866,6 @@ function updateSystemStatus(
             "status-offline"
     );
 
-
     /*
      * Receiving a valid tof_frame means the
      * Browser -> Python -> RouterBridge path is operational.
@@ -1249,12 +1876,10 @@ function updateSystemStatus(
         "status-online"
     );
 
-
     const sensors =
         orderedSensors(
             message
         );
-
 
     const onlineCount =
         sensors.filter(
@@ -1266,12 +1891,10 @@ function updateSystemStatus(
                 "ONLINE"
         ).length;
 
-
     setText(
         onlineSensorCountElement,
         onlineCount
     );
-
 
     setText(
         observationNumberElement,
@@ -1279,7 +1902,6 @@ function updateSystemStatus(
         ??
         0
     );
-
 
     if (
         onlineCount
@@ -1293,7 +1915,6 @@ function updateSystemStatus(
             "status-online"
         );
     }
-
     else if (
         onlineCount > 0
     )
@@ -1304,7 +1925,6 @@ function updateSystemStatus(
             "status-warning"
         );
     }
-
     else
     {
         setStatus(
@@ -1413,10 +2033,8 @@ function drawHeatmap(
         return;
     }
 
-
     const rows =
         image.length;
-
 
     const cols =
         Array.isArray(
@@ -1426,7 +2044,6 @@ function drawHeatmap(
             image[0].length
             :
             0;
-
 
     if (
         rows !== HEATMAP_ROWS
@@ -1443,7 +2060,6 @@ function drawHeatmap(
         );
     }
 
-
     if (
         rows === 0
         ||
@@ -1453,18 +2069,15 @@ function drawHeatmap(
         return;
     }
 
-
     const cellWidth =
         canvas.width
         /
         cols;
 
-
     const cellHeight =
         canvas.height
         /
         rows;
-
 
     context.clearRect(
         0,
@@ -1472,7 +2085,6 @@ function drawHeatmap(
         canvas.width,
         canvas.height
     );
-
 
     for (
         let row = 0;
@@ -1495,16 +2107,13 @@ function drawHeatmap(
                     ]
                 );
 
-
             const background =
                 colorFunction(
                     value
                 );
 
-
             context.fillStyle =
                 background;
-
 
             context.fillRect(
                 col
@@ -1520,14 +2129,11 @@ function drawHeatmap(
                 cellHeight
             );
 
-
             context.strokeStyle =
                 "#475569";
 
-
             context.lineWidth =
                 1;
-
 
             context.strokeRect(
                 col
@@ -1543,30 +2149,24 @@ function drawHeatmap(
                 cellHeight
             );
 
-
             const label =
                 labelFunction(
                     value
                 );
-
 
             if (label)
             {
                 context.fillStyle =
                     "#111827";
 
-
                 context.font =
                     "bold 20px Arial";
-
 
                 context.textAlign =
                     "center";
 
-
                 context.textBaseline =
                     "middle";
-
 
                 context.fillText(
                     label,
@@ -1587,7 +2187,6 @@ function drawHeatmap(
         }
     }
 
-
     drawSectorBoundaries(
         context,
         canvas,
@@ -1606,27 +2205,11 @@ function drawHeatmap(
  *     col 0 | col 1   col 2 | col 3
  *       S0  |       S1      |   S2
  *
- * S0:
- *     left-most column
- *     4 zones
+ * S0 = left-most column
+ * S1 = middle two columns
+ * S2 = right-most column
  *
- * S1:
- *     middle two columns
- *     8 zones
- *
- * S2:
- *     right-most column
- *     4 zones
- *
- * Therefore the red boundaries occur:
- *
- *     after column 0
- *     after column 2
- *
- * or:
- *
- *     x = 1 * cellWidth
- *     x = 3 * cellWidth
+ * The red boundaries occur after columns 0 and 2.
  */
 
 function drawSectorBoundaries(
@@ -1637,49 +2220,40 @@ function drawSectorBoundaries(
 {
     context.save();
 
-
     context.strokeStyle =
         "#dc2626";
 
-
     context.lineWidth =
         4;
-
 
     /*
      * S0 | S1 boundary
      */
     context.beginPath();
 
-
     context.moveTo(
         cellWidth,
         0
     );
-
 
     context.lineTo(
         cellWidth,
         canvas.height
     );
 
-
     context.stroke();
-
 
     /*
      * S1 | S2 boundary
      */
     context.beginPath();
 
-
     context.moveTo(
         cellWidth
         *
         3,
         0
     );
-
 
     context.lineTo(
         cellWidth
@@ -1688,9 +2262,7 @@ function drawSectorBoundaries(
         canvas.height
     );
 
-
     context.stroke();
-
 
     context.restore();
 }
@@ -1717,7 +2289,6 @@ function distanceToColor(
         return "#ffffff";
     }
 
-
     const normalized =
         Math.min(
             distance,
@@ -1725,7 +2296,6 @@ function distanceToColor(
         )
         /
         MAX_DISTANCE;
-
 
     /*
      * 0 mm -> red
@@ -1735,7 +2305,6 @@ function distanceToColor(
         normalized
         *
         120;
-
 
     return `hsl(${hue}, 100%, 50%)`;
 }
@@ -1760,7 +2329,6 @@ function confidenceToColor(
         return "#f8fafc";
     }
 
-
     const normalized =
         Math.max(
             0,
@@ -1770,12 +2338,10 @@ function confidenceToColor(
             )
         );
 
-
     const hue =
         normalized
         *
         1.2;
-
 
     return `hsl(${hue}, 85%, 48%)`;
 }
@@ -1792,11 +2358,6 @@ function updateObservationJSON(
     if (!observationJsonElement)
         return;
 
-
-    /*
-     * Display all six sensors rather than
-     * only the currently selected ToF.
-     */
     observationJsonElement.textContent =
         JSON.stringify(
             {
@@ -1810,7 +2371,13 @@ function updateObservationJSON(
                     message.configuration,
 
                 sensors:
-                    message.sensors
+                    message.sensors,
+
+                attention:
+                    message.attention,
+
+                feedback:
+                    message.feedback
             },
             null,
             4
@@ -1833,18 +2400,15 @@ socket.on(
         connected =
             true;
 
-
         console.log(
             "Connected to backend."
         );
-
 
         setStatus(
             browserStatusElement,
             "CONNECTED",
             "status-online"
         );
-
 
         socket.emit(
             "get_initial_state",
@@ -1861,11 +2425,9 @@ socket.on(
         connected =
             false;
 
-
         console.log(
             "Disconnected from backend."
         );
-
 
         setStatus(
             browserStatusElement,
@@ -1873,18 +2435,21 @@ socket.on(
             "status-offline"
         );
 
-
         setStatus(
             bridgeStatusElement,
             "WAITING",
             "status-warning"
         );
 
-
         setStatus(
             tofStatusElement,
             "OFFLINE",
             "status-offline"
+        );
+
+        setMotorFeedbackUnavailable(
+            "CONNECTION LOST",
+            "motor-state-fault"
         );
     }
 );
@@ -1901,27 +2466,15 @@ socket.on(
         if (!message)
             return;
 
-
         /*
          * SixthSense v3.0 primary payload:
          *
-         * message.sensors[0]
-         *     T1 / Front-right
-         *
-         * message.sensors[1]
-         *     T2 / Front
-         *
-         * message.sensors[2]
-         *     T3 / Front-left
-         *
-         * message.sensors[3]
-         *     T4 / Rear-left
-         *
-         * message.sensors[4]
-         *     T5 / Rear
-         *
-         * message.sensors[5]
-         *     T6 / Rear-right
+         * message.sensors[0] = T1 / Front-right
+         * message.sensors[1] = T2 / Front
+         * message.sensors[2] = T3 / Front-left
+         * message.sensors[3] = T4 / Rear-left
+         * message.sensors[4] = T5 / Rear
+         * message.sensors[5] = T6 / Rear-right
          */
         if (
             !Array.isArray(
@@ -1940,25 +2493,20 @@ socket.on(
             return;
         }
 
-
         lastMessage =
             message;
 
-
         messageCount++;
-
 
         setText(
             messageCountElement,
             messageCount
         );
 
-
         setText(
             lastUpdateElement,
             new Date().toLocaleTimeString()
         );
-
 
         if (
             message.app_version
@@ -1969,7 +2517,6 @@ socket.on(
                 message.app_version
             );
         }
-
 
         updateDashboard(
             message

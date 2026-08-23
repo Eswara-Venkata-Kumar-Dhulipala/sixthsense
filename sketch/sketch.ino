@@ -28,6 +28,8 @@
 //     produced at least one fresh frame since the previous publication.
 //   - Published data remains immutable until Python calls consume_observation().
 //   - All 96 zones are flattened per signal for efficient Bridge transfer.
+//   - Python sends an MCU-friendly four-bit motor mask through RouterBridge.
+//   - The MCU drives M1-M4 and turns them off if feedback commands stop.
 // ============================================================================
 
 #include <Wire.h>
@@ -61,6 +63,39 @@ constexpr uint8_t TOF_PACKET_SIZE = 128;
 
 constexpr uint8_t RANGING_FREQUENCY_HZ = 30;
 constexpr uint32_t INTEGRATION_TIME_MS = 20;
+
+constexpr uint8_t NUM_MOTORS = 4;
+
+// PWM outputs for M1 Front, M2 Left, M3 Rear, and M4 Right.
+// Connect these pins only to motor-driver inputs, never directly to motors.
+// Change this one array if the final driver wiring uses different PWM pins.
+constexpr std::array<uint8_t, NUM_MOTORS> MOTOR_PWM_PINS =
+{
+    5,   // bit 0 -> M1 -> Front
+    6,   // bit 1 -> M2 -> Left
+    9,   // bit 2 -> M3 -> Rear
+    10   // bit 3 -> M4 -> Right
+};
+
+constexpr uint8_t MOTOR_PWM_DUTY = 255;
+
+constexpr uint8_t MOTOR_MASK_M1 = 1U << 0;
+constexpr uint8_t MOTOR_MASK_M2 = 1U << 1;
+constexpr uint8_t MOTOR_MASK_M3 = 1U << 2;
+constexpr uint8_t MOTOR_MASK_M4 = 1U << 3;
+
+constexpr uint8_t MOTOR_MASK_ALL =
+    MOTOR_MASK_M1
+    |
+    MOTOR_MASK_M2
+    |
+    MOTOR_MASK_M3
+    |
+    MOTOR_MASK_M4;
+
+// Python refreshes the current mask every 500 ms. If the MPU application,
+// Bridge, or sensor pipeline stops, this watchdog removes stale vibration.
+constexpr uint32_t MOTOR_COMMAND_TIMEOUT_MS = 1000;
 
 constexpr uint8_t SENSOR_INIT_RETRIES = 5;
 constexpr uint32_t SENSOR_RETRY_DELAY_MS = 250;
@@ -172,6 +207,125 @@ atomic_t sensorReadErrors[NUM_SENSORS] =
 };
 
 uint32_t publishedObservationTimestamp = 0;
+
+// ============================================================================
+// Feedback / Motor State
+// ============================================================================
+
+uint8_t activeMotorMask = 0;
+uint32_t lastMotorCommandTimestamp = 0;
+
+void applyMotorMask(
+    uint8_t requestedMask
+)
+{
+    const uint8_t validMask =
+        requestedMask
+        &
+        MOTOR_MASK_ALL;
+
+    for (
+        uint8_t motorIndex = 0;
+        motorIndex < NUM_MOTORS;
+        motorIndex++
+    )
+    {
+        const bool enabled =
+            (
+                validMask
+                &
+                static_cast<uint8_t>(
+                    1U << motorIndex
+                )
+            )
+            !=
+            0;
+
+        analogWrite(
+            MOTOR_PWM_PINS[
+                motorIndex
+            ],
+            enabled
+                ? MOTOR_PWM_DUTY
+                : 0
+        );
+    }
+
+    activeMotorMask = validMask;
+}
+
+void initializeMotorOutputs()
+{
+    for (
+        uint8_t motorIndex = 0;
+        motorIndex < NUM_MOTORS;
+        motorIndex++
+    )
+    {
+        pinMode(
+            MOTOR_PWM_PINS[
+                motorIndex
+            ],
+            OUTPUT
+        );
+
+        analogWrite(
+            MOTOR_PWM_PINS[
+                motorIndex
+            ],
+            0
+        );
+    }
+
+    activeMotorMask = 0;
+    lastMotorCommandTimestamp = millis();
+}
+
+uint32_t set_motor_mask(
+    uint32_t requestedMask
+)
+{
+    applyMotorMask(
+        static_cast<uint8_t>(
+            requestedMask
+            &
+            MOTOR_MASK_ALL
+        )
+    );
+
+    lastMotorCommandTimestamp = millis();
+
+    return static_cast<uint32_t>(
+        activeMotorMask
+    );
+}
+
+uint32_t get_motor_mask()
+{
+    return static_cast<uint32_t>(
+        activeMotorMask
+    );
+}
+
+void updateMotorWatchdog()
+{
+    if (activeMotorMask == 0)
+    {
+        return;
+    }
+
+    const uint32_t elapsed =
+        millis()
+        -
+        lastMotorCommandTimestamp;
+
+    if (elapsed >= MOTOR_COMMAND_TIMEOUT_MS)
+    {
+        applyMotorMask(
+            0
+        );
+    }
+}
 
 // ============================================================================
 // Mux Helpers
@@ -1204,6 +1358,16 @@ void registerBridgeFunctions()
     );
 
     Bridge.provide(
+        "set_motor_mask",
+        set_motor_mask
+    );
+
+    Bridge.provide(
+        "get_motor_mask",
+        get_motor_mask
+    );
+
+    Bridge.provide(
         "consume_observation",
         consume_observation
     );
@@ -1215,6 +1379,8 @@ void registerBridgeFunctions()
 
 void setup()
 {
+    initializeMotorOutputs();
+
     Serial.begin(
         SERIAL_BAUD_RATE
     );
@@ -1270,6 +1436,9 @@ void setup()
     Serial.println("  Integration   : 20 ms");
     Serial.println("  I2C           : 400 kHz");
     Serial.println("  Packet size   : 128 bytes");
+    Serial.println("  Motors        : M1=D5, M2=D6, M3=D9, M4=D10");
+    Serial.println("  Motor mask    : bit0=M1, bit1=M2, bit2=M3, bit3=M4");
+    Serial.println("  Motor timeout : 1000 ms");
 
     if (sensorsRunning)
     {
@@ -1306,6 +1475,8 @@ void setup()
 
 void loop()
 {
+    updateMotorWatchdog();
+
     if (!sensorsRunning)
     {
         delay(
