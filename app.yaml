@@ -1,5 +1,5 @@
 name: sixthsense
-description: ""
+description: <div align="center">
 ports: []
 bricks:
 - arduino:web_ui: {}

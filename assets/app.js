@@ -1,249 +1,663 @@
-/******************************************************************************
+/****************************************************************************
  * SixthSense
- * Version : 2.3.0
+ * Version : 3.0.0
  * Dashboard JavaScript
- ******************************************************************************/
-
-/*****************************************************************************/
-/* Configuration                                                             */
-/*****************************************************************************/
+ * 6 x VL53L5CX / 4x4
+ ****************************************************************************/
 
 const APP_NAME = "SixthSense";
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "3.0.0";
 
-const HEATMAP_ROWS = 8;
-const HEATMAP_COLS = 8;
+const SENSOR_COUNT = 6;
+
+const SENSOR_ORDER = [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+];
+
+const SENSOR_LABELS = {
+    T1: "Front-right",
+    T2: "Front",
+    T3: "Front-left",
+    T4: "Rear-left",
+    T5: "Rear",
+    T6: "Rear-right"
+};
+
+const HEATMAP_ROWS = 4;
+const HEATMAP_COLS = 4;
 
 const INVALID_DISTANCE = 4000;
 const MAX_DISTANCE = 3000;
 
 const HISTORY_CAPACITY = 20;
+const MOTION_PERSISTENCE_MAX = 200;
 
 const CONFIDENCE_HIGH = 80;
 const CONFIDENCE_MEDIUM = 50;
+
+const MOTOR_MASK_ALL = 0x0F;
+
+const MOTOR_CONFIG = [
+    {
+        id: "M1",
+        direction: "Front",
+        bit: 0x01
+    },
+    {
+        id: "M2",
+        direction: "Left",
+        bit: 0x02
+    },
+    {
+        id: "M3",
+        direction: "Rear",
+        bit: 0x04
+    },
+    {
+        id: "M4",
+        direction: "Right",
+        bit: 0x08
+    }
+];
+
 
 /*****************************************************************************/
 /* Global State                                                              */
 /*****************************************************************************/
 
 let socket = null;
-let observation = null;
 let lastMessage = null;
 let messageCount = 0;
 let connected = false;
 
+/*
+ * T2 / Front is the default detail view.
+ */
+let selectedSensorId = "T2";
+
+
 /*****************************************************************************/
-/* Canvas                                                                    */
+/* DOM Helpers                                                               */
 /*****************************************************************************/
 
-const distanceCanvas = document.getElementById("tof-canvas");
-const distanceCtx = distanceCanvas.getContext("2d");
+const byId = (id) =>
+    document.getElementById(id);
 
-const confidenceCanvas = document.getElementById("confidence-canvas");
-const confidenceCtx = confidenceCanvas.getContext("2d");
 
 /*****************************************************************************/
 /* Cached DOM Elements                                                       */
 /*****************************************************************************/
 
 const applicationVersionElement =
-    document.getElementById("application-version");
+    byId("application-version");
 
-/* Sensor Information */
+const sensorOverviewGridElement =
+    byId("sensor-overview-grid");
+
+const sensorSelectorElement =
+    byId("sensor-selector");
+
+
+/* Haptic Motor Feedback */
+
+const motorFeedbackStateElement =
+    byId("motor-feedback-state");
+
+const motorMapElement =
+    byId("motor-map");
+
+const activeMotorCountElement =
+    byId("active-motor-count");
+
+const attentionStatusElement =
+    byId("attention-status");
+
+const requestedMotorMaskElement =
+    byId("requested-motor-mask");
+
+const appliedMotorMaskElement =
+    byId("applied-motor-mask");
+
+const feedbackCommandStatusElement =
+    byId("feedback-command-status");
+
+const activeMotorNamesElement =
+    byId("active-motor-names");
+
+const attentionSourcesElement =
+    byId("attention-sources");
+
+const motorElements = MOTOR_CONFIG.map(
+    (motor) => ({
+        ...motor,
+
+        node:
+            byId(
+                `motor-${motor.id.toLowerCase()}`
+            ),
+
+        state:
+            byId(
+                `motor-${motor.id.toLowerCase()}-state`
+            )
+    })
+);
+
+
+/* Selected Sensor Information */
 
 const sensorIdElement =
-    document.getElementById("sensor-id");
+    byId("sensor-id");
 
 const sensorNameElement =
-    document.getElementById("sensor-name");
+    byId("sensor-name");
+
+const sensorMuxChannelElement =
+    byId("sensor-mux-channel");
 
 const sensorStatusElement =
-    document.getElementById("sensor-status");
+    byId("sensor-status");
 
 const sensorFrameElement =
-    document.getElementById("sensor-frame");
+    byId("sensor-frame");
 
 const sensorTimestampElement =
-    document.getElementById("sensor-timestamp");
+    byId("sensor-timestamp");
 
 const sensorFpsElement =
-    document.getElementById("sensor-fps");
+    byId("sensor-fps");
 
-/* Sector 0 */
+const historySizeElement =
+    byId("history-size");
 
-const sector0DistanceElement =
-    document.getElementById("sector0-distance");
+const historyCapacityElement =
+    byId("history-capacity");
 
-const sector0ConfidenceElement =
-    document.getElementById("sector0-confidence");
-
-const sector0ConfidenceLevelElement =
-    document.getElementById("sector0-confidence-level");
-
-const sector0ZoneElement =
-    document.getElementById("sector0-zone");
-
-const sector0VelocityElement =
-    document.getElementById("sector0-velocity");
-
-const sector0VelocityStateElement =
-    document.getElementById("sector0-velocity-state");
-
-const sector0PersistenceElement =
-    document.getElementById("sector0-persistence");
-
-/* Sector 1 */
-
-const sector1DistanceElement =
-    document.getElementById("sector1-distance");
-
-const sector1ConfidenceElement =
-    document.getElementById("sector1-confidence");
-
-const sector1ConfidenceLevelElement =
-    document.getElementById("sector1-confidence-level");
-
-const sector1ZoneElement =
-    document.getElementById("sector1-zone");
-
-const sector1VelocityElement =
-    document.getElementById("sector1-velocity");
-
-const sector1VelocityStateElement =
-    document.getElementById("sector1-velocity-state");
-
-const sector1PersistenceElement =
-    document.getElementById("sector1-persistence");
-
-/* Sector 2 */
-
-const sector2DistanceElement =
-    document.getElementById("sector2-distance");
-
-const sector2ConfidenceElement =
-    document.getElementById("sector2-confidence");
-
-const sector2ConfidenceLevelElement =
-    document.getElementById("sector2-confidence-level");
-
-const sector2ZoneElement =
-    document.getElementById("sector2-zone");
-
-const sector2VelocityElement =
-    document.getElementById("sector2-velocity");
-
-const sector2VelocityStateElement =
-    document.getElementById("sector2-velocity-state");
-
-const sector2PersistenceElement =
-    document.getElementById("sector2-persistence");
 
 /* System Status */
 
 const bridgeStatusElement =
-    document.getElementById("bridge-status");
+    byId("bridge-status");
 
 const browserStatusElement =
-    document.getElementById("browser-status");
+    byId("browser-status");
 
 const tofStatusElement =
-    document.getElementById("tof-status");
+    byId("tof-status");
 
-const historySizeElement =
-    document.getElementById("history-size");
+const onlineSensorCountElement =
+    byId("online-sensor-count");
 
-const historyCapacityElement =
-    document.getElementById("history-capacity");
+const observationNumberElement =
+    byId("observation-number");
+
 
 /* Debug */
 
 const observationJsonElement =
-    document.getElementById("observation-json");
+    byId("observation-json");
 
 const dashboardVersionElement =
-    document.getElementById("dashboard-version");
+    byId("dashboard-version");
 
 const backendVersionElement =
-    document.getElementById("backend-version");
+    byId("backend-version");
 
 const lastUpdateElement =
-    document.getElementById("last-update");
+    byId("last-update");
 
 const messageCountElement =
-    document.getElementById("message-count");
+    byId("message-count");
+
 
 /*****************************************************************************/
-/* Socket.IO                                                                 */
+/* Canvas                                                                    */
 /*****************************************************************************/
 
-socket = io();
+const distanceCanvas =
+    byId("tof-canvas");
 
-socket.on("connect", () =>
+const confidenceCanvas =
+    byId("confidence-canvas");
+
+const distanceCtx =
+    distanceCanvas
+        ? distanceCanvas.getContext("2d")
+        : null;
+
+const confidenceCtx =
+    confidenceCanvas
+        ? confidenceCanvas.getContext("2d")
+        : null;
+
+
+/*****************************************************************************/
+/* Sector DOM Elements                                                       */
+/*****************************************************************************/
+
+const sectorElements = [0, 1, 2].map(
+    (index) => ({
+        distance:
+            byId(
+                `sector${index}-distance`
+            ),
+
+        confidence:
+            byId(
+                `sector${index}-confidence`
+            ),
+
+        confidenceLevel:
+            byId(
+                `sector${index}-confidence-level`
+            ),
+
+        zone:
+            byId(
+                `sector${index}-zone`
+            ),
+
+        velocity:
+            byId(
+                `sector${index}-velocity`
+            ),
+
+        velocityState:
+            byId(
+                `sector${index}-velocity-state`
+            ),
+
+        persistence:
+            byId(
+                `sector${index}-persistence`
+            )
+    })
+);
+
+
+/*****************************************************************************/
+/* Generic Utilities                                                         */
+/*****************************************************************************/
+
+function setText(
+    element,
+    value
+)
 {
-    connected = true;
-
-    console.log("Connected to backend.");
-
-    setStatus(
-        browserStatusElement,
-        "CONNECTED",
-        "status-online"
-    );
-
-    socket.emit(
-        "get_initial_state",
-        {}
-    );
-});
-
-socket.on("disconnect", () =>
-{
-    connected = false;
-
-    console.log("Disconnected from backend.");
-
-    setStatus(
-        browserStatusElement,
-        "DISCONNECTED",
-        "status-offline"
-    );
-
-    setStatus(
-        bridgeStatusElement,
-        "WAITING",
-        "status-warning"
-    );
-});
-
-/*****************************************************************************/
-/* Dashboard Messages                                                        */
-/*****************************************************************************/
-
-socket.on("tof_frame", (message) =>
-{
-    if (!message || !message.observation)
+    if (!element)
         return;
 
-    lastMessage = message;
-    observation = message.observation;
+    element.textContent =
+        value ?? "--";
+}
 
-    messageCount++;
 
-    messageCountElement.textContent =
-        messageCount;
+function setStatus(
+    element,
+    value,
+    className
+)
+{
+    if (!element)
+        return;
 
-    lastUpdateElement.textContent =
-        new Date().toLocaleTimeString();
+    element.textContent =
+        value;
 
-    if (message.app_version)
+    element.className =
+        className;
+}
+
+
+function formatNumber(
+    value,
+    digits = 1
+)
+{
+    const number =
+        Number(value);
+
+    if (!Number.isFinite(number))
+        return "--";
+
+    return number.toFixed(
+        digits
+    );
+}
+
+
+function escapeHtml(
+    value
+)
+{
+    return String(
+        value ?? ""
+    )
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+}
+
+
+function validateObservation(
+    observation
+)
+{
+    return Boolean(
+        observation
+        &&
+        Array.isArray(
+            observation.sectors
+        )
+        &&
+        observation.sectors.length === 3
+    );
+}
+
+
+function normalizeMotorMask(
+    value
+)
+{
+    if (
+        value === null
+        ||
+        value === undefined
+        ||
+        value === ""
+    )
     {
-        backendVersionElement.textContent =
-            message.app_version;
+        return null;
     }
 
-    updateDashboard(message);
-    updateHeatmaps(message);
-});
+    const mask =
+        Number(value);
+
+    if (!Number.isFinite(mask))
+        return null;
+
+    return (
+        Math.trunc(mask)
+        &
+        MOTOR_MASK_ALL
+    );
+}
+
+
+function formatMotorMask(
+    motorMask
+)
+{
+    const normalized =
+        normalizeMotorMask(
+            motorMask
+        );
+
+    if (normalized === null)
+        return "--";
+
+    return `0x${normalized
+        .toString(16)
+        .toUpperCase()
+        .padStart(2, "0")}`;
+}
+
+
+function motorNamesFromMask(
+    motorMask
+)
+{
+    const normalized =
+        normalizeMotorMask(
+            motorMask
+        );
+
+    if (normalized === null)
+        return [];
+
+    return MOTOR_CONFIG
+        .filter(
+            (motor) =>
+                Boolean(
+                    normalized
+                    &
+                    motor.bit
+                )
+        )
+        .map(
+            (motor) =>
+                motor.id
+        );
+}
+
+
+function formatMotorNames(
+    motorNames
+)
+{
+    return motorNames.length > 0
+        ? motorNames.join(" + ")
+        : "None";
+}
+
+
+/*****************************************************************************/
+/* Multi-ToF Helpers                                                         */
+/*****************************************************************************/
+
+function orderedSensors(
+    message
+)
+{
+    const sensors =
+        Array.isArray(
+            message?.sensors
+        )
+            ? message.sensors
+            : [];
+
+    return SENSOR_ORDER
+        .map(
+            (sensorId) =>
+                sensors.find(
+                    (sensor) =>
+                        sensor.sensor_id
+                        ===
+                        sensorId
+                )
+        )
+        .filter(
+            Boolean
+        );
+}
+
+
+function findSensor(
+    message,
+    sensorId
+)
+{
+    if (
+        !Array.isArray(
+            message?.sensors
+        )
+    )
+    {
+        return null;
+    }
+
+    return (
+        message.sensors.find(
+            (sensor) =>
+                sensor.sensor_id
+                ===
+                sensorId
+        )
+        ??
+        null
+    );
+}
+
+
+/*****************************************************************************/
+/* Confidence Presentation                                                   */
+/*****************************************************************************/
+
+function confidenceClassification(
+    confidence
+)
+{
+    if (
+        !Number.isFinite(
+            confidence
+        )
+        ||
+        confidence <= 0
+    )
+    {
+        return {
+            label:
+                "INVALID",
+
+            className:
+                "confidence-invalid"
+        };
+    }
+
+    if (
+        confidence
+        >=
+        CONFIDENCE_HIGH
+    )
+    {
+        return {
+            label:
+                "HIGH",
+
+            className:
+                "confidence-high"
+        };
+    }
+
+    if (
+        confidence
+        >=
+        CONFIDENCE_MEDIUM
+    )
+    {
+        return {
+            label:
+                "MEDIUM",
+
+            className:
+                "confidence-medium"
+        };
+    }
+
+    return {
+        label:
+            "LOW",
+
+        className:
+            "confidence-low"
+    };
+}
+
+
+/*****************************************************************************/
+/* Sensor Selector                                                           */
+/*****************************************************************************/
+
+function setupSensorSelector()
+{
+    if (!sensorSelectorElement)
+        return;
+
+    sensorSelectorElement
+        .querySelectorAll(
+            ".sensor-select-button"
+        )
+        .forEach(
+            (button) =>
+            {
+                button.addEventListener(
+                    "click",
+                    () =>
+                    {
+                        const requestedSensorId =
+                            button.dataset.sensorId;
+
+                        if (!requestedSensorId)
+                            return;
+
+                        selectedSensorId =
+                            requestedSensorId;
+
+                        updateSensorSelectorState();
+
+                        if (lastMessage)
+                        {
+                            updateSensorOverview(
+                                lastMessage
+                            );
+
+                            updateSelectedSensor(
+                                lastMessage
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
+    updateSensorSelectorState();
+}
+
+
+function updateSensorSelectorState()
+{
+    if (!sensorSelectorElement)
+        return;
+
+    sensorSelectorElement
+        .querySelectorAll(
+            ".sensor-select-button"
+        )
+        .forEach(
+            (button) =>
+            {
+                button.classList.toggle(
+                    "active",
+                    button.dataset.sensorId
+                    ===
+                    selectedSensorId
+                );
+            }
+        );
+}
+
 
 /*****************************************************************************/
 /* Dashboard Initialization                                                  */
@@ -251,26 +665,50 @@ socket.on("tof_frame", (message) =>
 
 function initializeDashboard()
 {
-    applicationVersionElement.textContent =
-        `v${APP_VERSION}`;
+    setText(
+        applicationVersionElement,
+        `v${APP_VERSION}`
+    );
 
-    dashboardVersionElement.textContent =
-        APP_VERSION;
+    setText(
+        dashboardVersionElement,
+        APP_VERSION
+    );
 
-    backendVersionElement.textContent =
-        "--";
+    setText(
+        backendVersionElement,
+        "--"
+    );
 
-    historySizeElement.textContent =
-        "0";
+    setText(
+        historySizeElement,
+        "0"
+    );
 
-    historyCapacityElement.textContent =
-        HISTORY_CAPACITY;
+    setText(
+        historyCapacityElement,
+        HISTORY_CAPACITY
+    );
 
-    messageCountElement.textContent =
-        "0";
+    setText(
+        messageCountElement,
+        "0"
+    );
 
-    observationJsonElement.textContent =
-        "Waiting for observations...";
+    setText(
+        onlineSensorCountElement,
+        "0"
+    );
+
+    setText(
+        observationNumberElement,
+        "0"
+    );
+
+    setText(
+        observationJsonElement,
+        "Waiting for observations..."
+    );
 
     setStatus(
         bridgeStatusElement,
@@ -290,74 +728,886 @@ function initializeDashboard()
         "status-offline"
     );
 
-    console.log("==========================================");
-    console.log(APP_NAME);
-    console.log("Dashboard Version :", APP_VERSION);
-    console.log("Temporal ToF + Confidence + Motion Persistence Engine");
-    console.log("==========================================");
-}
-
-/*****************************************************************************/
-/* Dashboard Update                                                          */
-/*****************************************************************************/
-
-function updateDashboard(message)
-{
-    if (!message || !message.observation)
-        return;
-
-    const currentObservation =
-        message.observation;
-
-    updateSensorInformation(
-        currentObservation
+    setMotorFeedbackUnavailable(
+        "WAITING FOR FEEDBACK",
+        "motor-state-waiting"
     );
 
-    updateSectorCards(
-        currentObservation
+    setupSensorSelector();
+
+    console.log(
+        "=========================================="
+    );
+
+    console.log(
+        APP_NAME
+    );
+
+    console.log(
+        "Dashboard Version:",
+        APP_VERSION
+    );
+
+    console.log(
+        "6 x VL53L5CX | 4x4 | Multi-ToF Observation Engine"
+    );
+
+    console.log(
+        "=========================================="
+    );
+}
+
+
+/*****************************************************************************/
+/* Main Dashboard Update                                                     */
+/*****************************************************************************/
+
+function updateDashboard(
+    message
+)
+{
+    updateSensorOverview(
+        message
+    );
+
+    updateSelectedSensor(
+        message
+    );
+
+    updateMotorFeedback(
+        message
     );
 
     updateSystemStatus(
-        currentObservation
+        message
     );
 
     updateObservationJSON(
-        currentObservation
+        message
     );
 }
 
+
 /*****************************************************************************/
-/* Sensor Information                                                        */
+/* Haptic Motor Feedback                                                     */
 /*****************************************************************************/
 
-function updateSensorInformation(currentObservation)
+function setMotorFeedbackHeadline(
+    value,
+    className
+)
+{
+    setStatus(
+        motorFeedbackStateElement,
+        value,
+        `motor-feedback-state ${className}`
+    );
+}
+
+
+function setMotorFeedbackUnavailable(
+    headline,
+    headlineClass
+)
+{
+    setMotorFeedbackHeadline(
+        headline,
+        headlineClass
+    );
+
+    if (motorMapElement)
+    {
+        motorMapElement.classList.remove(
+            "has-active"
+        );
+
+        motorMapElement.classList.toggle(
+            "feedback-fault",
+            headlineClass === "motor-state-fault"
+        );
+    }
+
+    motorElements.forEach(
+        (motor) =>
+        {
+            if (motor.node)
+            {
+                motor.node.classList.remove(
+                    "active"
+                );
+
+                motor.node.classList.add(
+                    "unavailable"
+                );
+
+                motor.node.setAttribute(
+                    "aria-label",
+                    `${motor.id} ${motor.direction}: feedback unavailable`
+                );
+            }
+
+            setText(
+                motor.state,
+                "--"
+            );
+        }
+    );
+
+    setText(
+        activeMotorCountElement,
+        "-- / 4"
+    );
+
+    setText(
+        attentionStatusElement,
+        "WAITING"
+    );
+
+    if (attentionStatusElement)
+    {
+        attentionStatusElement.className =
+            "status-unknown";
+    }
+
+    setText(
+        requestedMotorMaskElement,
+        "--"
+    );
+
+    setText(
+        appliedMotorMaskElement,
+        "--"
+    );
+
+    setText(
+        feedbackCommandStatusElement,
+        "UNAVAILABLE"
+    );
+
+    if (feedbackCommandStatusElement)
+    {
+        feedbackCommandStatusElement.className =
+            "status-unknown";
+    }
+
+    setText(
+        activeMotorNamesElement,
+        "Unknown"
+    );
+
+    renderAttentionSources(
+        []
+    );
+}
+
+
+function renderAttentionSources(
+    sources
+)
+{
+    if (!attentionSourcesElement)
+        return;
+
+    attentionSourcesElement.innerHTML =
+        "";
+
+    if (
+        !Array.isArray(sources)
+        ||
+        sources.length === 0
+    )
+    {
+        attentionSourcesElement.className =
+            "attention-sources attention-sources-empty";
+
+        attentionSourcesElement.textContent =
+            "No sector currently meets the activation rule.";
+
+        return;
+    }
+
+    attentionSourcesElement.className =
+        "attention-sources";
+
+    sources.forEach(
+        (source) =>
+        {
+            const sourceMask =
+                normalizeMotorMask(
+                    source?.motor_mask
+                );
+
+            const sourceMotors =
+                motorNamesFromMask(
+                    sourceMask
+                );
+
+            const chip =
+                document.createElement(
+                    "div"
+                );
+
+            chip.className =
+                "attention-source-chip";
+
+            const title =
+                document.createElement(
+                    "strong"
+                );
+
+            title.textContent =
+                `${source?.sensor_id ?? "--"} / ${source?.sector_name ?? "--"}`;
+
+            const detail =
+                document.createElement(
+                    "span"
+                );
+
+            detail.textContent =
+                `${source?.sensor_position ?? "--"} · P${source?.motion_persistence ?? 0}`;
+
+            const motors =
+                document.createElement(
+                    "span"
+                );
+
+            motors.className =
+                "attention-source-motors";
+
+            motors.textContent =
+                `→ ${formatMotorNames(sourceMotors)}`;
+
+            chip.append(
+                title,
+                detail,
+                motors
+            );
+
+            attentionSourcesElement.appendChild(
+                chip
+            );
+        }
+    );
+}
+
+
+function updateMotorFeedback(
+    message
+)
+{
+    const attention =
+        message?.attention
+        ??
+        null;
+
+    const feedback =
+        message?.feedback
+        ??
+        null;
+
+    const requestedMask =
+        normalizeMotorMask(
+            attention?.motor_mask
+            ??
+            feedback?.requested_motor_mask
+        );
+
+    const appliedMask =
+        normalizeMotorMask(
+            feedback?.applied_motor_mask
+        );
+
+    const feedbackAvailable =
+        Boolean(feedback)
+        &&
+        appliedMask !== null;
+
+    const commandOk =
+        feedbackAvailable
+        &&
+        feedback.command_ok === true;
+
+    if (!attention && !feedbackAvailable)
+    {
+        setMotorFeedbackUnavailable(
+            "MCU FEEDBACK UNAVAILABLE",
+            "motor-state-waiting"
+        );
+
+        return;
+    }
+
+    setText(
+        requestedMotorMaskElement,
+        formatMotorMask(
+            requestedMask
+        )
+    );
+
+    setText(
+        appliedMotorMaskElement,
+        feedbackAvailable
+            ? (
+                commandOk
+                    ? formatMotorMask(appliedMask)
+                    : `${formatMotorMask(appliedMask)} (last confirmed)`
+            )
+            : "--"
+    );
+
+    const requestedMotors =
+        motorNamesFromMask(
+            requestedMask
+        );
+
+    if (attentionStatusElement)
+    {
+        if (!attention)
+        {
+            setStatus(
+                attentionStatusElement,
+                "UNAVAILABLE",
+                "status-unknown"
+            );
+        }
+        else if (requestedMotors.length > 0)
+        {
+            setStatus(
+                attentionStatusElement,
+                "ATTENTION ACTIVE",
+                "status-danger"
+            );
+        }
+        else
+        {
+            setStatus(
+                attentionStatusElement,
+                "IDLE",
+                "status-online"
+            );
+        }
+    }
+
+    if (!feedbackAvailable)
+    {
+        setMotorFeedbackUnavailable(
+            "MCU FEEDBACK UNAVAILABLE",
+            "motor-state-waiting"
+        );
+
+        setText(
+            requestedMotorMaskElement,
+            formatMotorMask(
+                requestedMask
+            )
+        );
+
+        if (attentionStatusElement && attention)
+        {
+            setStatus(
+                attentionStatusElement,
+                requestedMotors.length > 0
+                    ? "ATTENTION ACTIVE"
+                    : "IDLE",
+                requestedMotors.length > 0
+                    ? "status-danger"
+                    : "status-online"
+            );
+        }
+
+        renderAttentionSources(
+            attention?.active_sources
+            ??
+            []
+        );
+
+        return;
+    }
+
+    if (!commandOk)
+    {
+        setStatus(
+            feedbackCommandStatusElement,
+            "COMMAND ERROR",
+            "status-danger"
+        );
+
+        setMotorFeedbackHeadline(
+            "FEEDBACK COMMAND ERROR",
+            "motor-state-fault"
+        );
+    }
+    else
+    {
+        setStatus(
+            feedbackCommandStatusElement,
+            "ACKNOWLEDGED",
+            "status-online"
+        );
+    }
+
+    /*
+     * Only a successful MCU acknowledgement is treated as confirmation
+     * that the applied mask represents the current motor state.
+     */
+    const confirmedMask =
+        commandOk
+            ? appliedMask
+            : 0;
+
+    const activeMotors =
+        motorNamesFromMask(
+            confirmedMask
+        );
+
+    motorElements.forEach(
+        (motor) =>
+        {
+            const active =
+                Boolean(
+                    confirmedMask
+                    &
+                    motor.bit
+                );
+
+            if (motor.node)
+            {
+                motor.node.classList.toggle(
+                    "active",
+                    active
+                );
+
+                motor.node.classList.toggle(
+                    "unavailable",
+                    !commandOk
+                );
+
+                motor.node.setAttribute(
+                    "aria-label",
+                    `${motor.id} ${motor.direction}: ${
+                        active
+                            ? "vibrating"
+                            : commandOk
+                                ? "off"
+                                : "feedback unavailable"
+                    }`
+                );
+            }
+
+            setText(
+                motor.state,
+                active
+                    ? "VIBRATING"
+                    : commandOk
+                        ? "OFF"
+                        : "--"
+            );
+        }
+    );
+
+    if (motorMapElement)
+    {
+        motorMapElement.classList.toggle(
+            "has-active",
+            activeMotors.length > 0
+        );
+
+        motorMapElement.classList.toggle(
+            "feedback-fault",
+            !commandOk
+        );
+
+        motorMapElement.setAttribute(
+            "aria-label",
+            commandOk
+                ? `Top-view motor arrangement. Vibrating motors: ${formatMotorNames(activeMotors)}.`
+                : "Top-view motor arrangement. Current MCU motor state is unavailable."
+        );
+    }
+
+    setText(
+        activeMotorCountElement,
+        commandOk
+            ? `${activeMotors.length} / 4`
+            : "-- / 4"
+    );
+
+    setText(
+        activeMotorNamesElement,
+        commandOk
+            ? formatMotorNames(activeMotors)
+            : "Unknown"
+    );
+
+    if (commandOk)
+    {
+        if (activeMotors.length > 0)
+        {
+            setMotorFeedbackHeadline(
+                `VIBRATING: ${formatMotorNames(activeMotors)}`,
+                "motor-state-active"
+            );
+        }
+        else
+        {
+            setMotorFeedbackHeadline(
+                "ALL MOTORS OFF",
+                "motor-state-idle"
+            );
+        }
+    }
+
+    renderAttentionSources(
+        attention?.active_sources
+        ??
+        []
+    );
+}
+
+
+/*****************************************************************************/
+/* Six-ToF Overview                                                          */
+/*****************************************************************************/
+
+function updateSensorOverview(
+    message
+)
+{
+    if (!sensorOverviewGridElement)
+        return;
+
+    const sensors =
+        orderedSensors(
+            message
+        );
+
+    sensorOverviewGridElement.innerHTML =
+        "";
+
+    if (sensors.length === 0)
+    {
+        sensorOverviewGridElement.innerHTML =
+            '<div class="empty-state">'
+            +
+            'Waiting for six-sensor observations...'
+            +
+            '</div>';
+
+        return;
+    }
+
+    sensors.forEach(
+        (sensor) =>
+        {
+            const observation =
+                sensor.observation
+                ??
+                {};
+
+            const sectors =
+                Array.isArray(
+                    observation.sectors
+                )
+                    ? observation.sectors
+                    : [];
+
+            const online =
+                observation.status
+                ===
+                "ONLINE";
+
+            const card =
+                document.createElement(
+                    "button"
+                );
+
+            card.type =
+                "button";
+
+            card.className =
+                "sensor-overview-item";
+
+            if (
+                sensor.sensor_id
+                ===
+                selectedSensorId
+            )
+            {
+                card.classList.add(
+                    "selected"
+                );
+            }
+
+            const sectorHtml =
+                [0, 1, 2]
+                    .map(
+                        (sectorIndex) =>
+                        {
+                            const sector =
+                                sectors[
+                                    sectorIndex
+                                ]
+                                ??
+                                {};
+
+                            const distance =
+                                Number(
+                                    sector.distance_mm
+                                    ??
+                                    0
+                                );
+
+                            const value =
+                                distance > 0
+                                    ?
+                                    `${Math.round(distance)} mm`
+                                    :
+                                    "--";
+
+                            return `
+                                <div class="overview-sector">
+                                    <span>S${sectorIndex}</span>
+                                    <strong>${value}</strong>
+                                </div>
+                            `;
+                        }
+                    )
+                    .join(
+                        ""
+                    );
+
+            card.innerHTML = `
+                <div class="overview-header">
+
+                    <div>
+                        <strong>
+                            ${escapeHtml(
+                                sensor.sensor_id
+                                ??
+                                "--"
+                            )}
+                        </strong>
+
+                        <span>
+                            ${escapeHtml(
+                                sensor.position
+                                ??
+                                SENSOR_LABELS[
+                                    sensor.sensor_id
+                                ]
+                                ??
+                                "--"
+                            )}
+                        </span>
+                    </div>
+
+                    <span
+                        class="${
+                            online
+                                ?
+                                "status-online"
+                                :
+                                "status-offline"
+                        }">
+
+                        ${
+                            online
+                                ?
+                                "ONLINE"
+                                :
+                                "OFFLINE"
+                        }
+
+                    </span>
+
+                </div>
+
+                <div class="overview-meta">
+
+                    <span>
+                        CH${escapeHtml(
+                            sensor.mux_channel
+                            ??
+                            "--"
+                        )}
+                    </span>
+
+                    <span>
+                        ${formatNumber(
+                            sensor.fps,
+                            1
+                        )} Hz
+                    </span>
+
+                    <span>
+                        F${escapeHtml(
+                            sensor.frame_number
+                            ??
+                            "--"
+                        )}
+                    </span>
+
+                </div>
+
+                <div class="overview-sector-grid">
+                    ${sectorHtml}
+                </div>
+            `;
+
+            card.addEventListener(
+                "click",
+                () =>
+                {
+                    selectedSensorId =
+                        sensor.sensor_id;
+
+                    updateSensorSelectorState();
+
+                    updateSensorOverview(
+                        message
+                    );
+
+                    updateSelectedSensor(
+                        message
+                    );
+                }
+            );
+
+            sensorOverviewGridElement.appendChild(
+                card
+            );
+        }
+    );
+}
+
+
+/*****************************************************************************/
+/* Selected Sensor                                                           */
+/*****************************************************************************/
+
+function updateSelectedSensor(
+    message
+)
+{
+    let sensor =
+        findSensor(
+            message,
+            selectedSensorId
+        );
+
+    /*
+     * If selected sensor is unavailable,
+     * use the first available sensor.
+     */
+    if (!sensor)
+    {
+        sensor =
+            orderedSensors(
+                message
+            )[0]
+            ??
+            null;
+
+        if (!sensor)
+            return;
+
+        selectedSensorId =
+            sensor.sensor_id;
+
+        updateSensorSelectorState();
+    }
+
+    const observation =
+        sensor.observation
+        ??
+        null;
+
+    if (
+        !validateObservation(
+            observation
+        )
+    )
+    {
+        return;
+    }
+
+    updateSensorInformation(
+        sensor,
+        observation
+    );
+
+    updateSectorCards(
+        observation
+    );
+
+    updateHeatmaps(
+        sensor
+    );
+}
+
+
+/*****************************************************************************/
+/* Selected Sensor Information                                               */
+/*****************************************************************************/
+
+function updateSensorInformation(
+    sensor,
+    observation
+)
 {
     setText(
         sensorIdElement,
-        currentObservation.sensor_id
+        sensor.sensor_id
     );
 
     setText(
         sensorNameElement,
-        currentObservation.sensor_name
+        sensor.position
+        ??
+        sensor.sensor_name
+    );
+
+    setText(
+        sensorMuxChannelElement,
+        sensor.mux_channel
     );
 
     setText(
         sensorFrameElement,
-        currentObservation.frame_number
+        sensor.frame_number
+        ??
+        observation.frame_number
     );
 
     setText(
         sensorTimestampElement,
-        currentObservation.timestamp
+        sensor.timestamp
+        ??
+        observation.timestamp
     );
 
     setText(
         sensorFpsElement,
-        formatNumber(currentObservation.fps, 1)
+        formatNumber(
+            sensor.fps
+            ??
+            observation.fps,
+            2
+        )
     );
 
-    if (currentObservation.status === "ONLINE")
+    setText(
+        historySizeElement,
+        observation.history_size
+        ??
+        0
+    );
+
+    if (
+        observation.status
+        ===
+        "ONLINE"
+    )
     {
         setStatus(
             sensorStatusElement,
@@ -369,377 +1619,548 @@ function updateSensorInformation(currentObservation)
     {
         setStatus(
             sensorStatusElement,
-            currentObservation.status ?? "OFFLINE",
+            observation.status
+            ??
+            "OFFLINE",
             "status-offline"
         );
     }
 }
+
 
 /*****************************************************************************/
 /* Sector Cards                                                              */
 /*****************************************************************************/
 
-function updateSectorCards(currentObservation)
+function updateSectorCards(
+    observation
+)
 {
-    if (!validateObservation(currentObservation))
+    if (
+        !validateObservation(
+            observation
+        )
+    )
+    {
         return;
+    }
 
-    updateSector(
-        currentObservation.sectors[0],
-        sector0DistanceElement,
-        sector0ConfidenceElement,
-        sector0ConfidenceLevelElement,
-        sector0ZoneElement,
-        sector0VelocityElement,
-        sector0VelocityStateElement,
-        sector0PersistenceElement
-    );
-
-    updateSector(
-        currentObservation.sectors[1],
-        sector1DistanceElement,
-        sector1ConfidenceElement,
-        sector1ConfidenceLevelElement,
-        sector1ZoneElement,
-        sector1VelocityElement,
-        sector1VelocityStateElement,
-        sector1PersistenceElement
-    );
-
-    updateSector(
-        currentObservation.sectors[2],
-        sector2DistanceElement,
-        sector2ConfidenceElement,
-        sector2ConfidenceLevelElement,
-        sector2ZoneElement,
-        sector2VelocityElement,
-        sector2VelocityStateElement,
-        sector2PersistenceElement
+    observation.sectors.forEach(
+        (sector, index) =>
+        {
+            updateSector(
+                sector,
+                sectorElements[
+                    index
+                ]
+            );
+        }
     );
 }
+
 
 function updateSector(
     sector,
-    distanceElement,
-    confidenceElement,
-    confidenceLevelElement,
-    zoneElement,
-    velocityElement,
-    velocityStateElement,
-    persistenceElement
+    elements
 )
 {
+    if (!elements)
+        return;
+
     const distance =
-        Number(sector.distance_mm ?? 0);
+        Number(
+            sector.distance_mm
+            ??
+            0
+        );
 
     const confidence =
-        Number(sector.confidence ?? 0);
+        Number(
+            sector.confidence
+            ??
+            0
+        );
 
     const velocity =
-        Number(sector.velocity_mmps ?? 0);
+        Number(
+            sector.velocity_mmps
+            ??
+            0
+        );
 
     const velocityValid =
-        Boolean(sector.velocity_valid ?? false);
+        Boolean(
+            sector.velocity_valid
+            ??
+            false
+        );
 
-    const motionPersistence =
-        Number(sector.motion_persistence ?? 0);
+    const persistence =
+        Number(
+            sector.motion_persistence
+            ??
+            0
+        );
 
-    distanceElement.textContent =
-        distance > 0 ? distance : "--";
+    setText(
+        elements.distance,
+        distance > 0
+            ?
+            Math.round(
+                distance
+            )
+            :
+            "--"
+    );
 
-    confidenceElement.textContent =
-        Number.isFinite(confidence)
-            ? confidence.toFixed(1)
-            : "0.0";
+    setText(
+        elements.confidence,
+        Number.isFinite(
+            confidence
+        )
+            ?
+            confidence.toFixed(
+                1
+            )
+            :
+            "0.0"
+    );
 
-    zoneElement.textContent =
-        Number(sector.zone_id) >= 0
-            ? sector.zone_id
-            : "--";
+    setText(
+        elements.zone,
+        Number(
+            sector.zone_id
+        )
+        >=
+        0
+            ?
+            sector.zone_id
+            :
+            "--"
+    );
 
-    velocityElement.textContent =
-        velocityValid && Number.isFinite(velocity)
-            ? velocity.toFixed(1)
-            : "--";
+    setText(
+        elements.velocity,
+        velocityValid
+        &&
+        Number.isFinite(
+            velocity
+        )
+            ?
+            velocity.toFixed(
+                1
+            )
+            :
+            "--"
+    );
 
-    persistenceElement.textContent =
-        Number.isFinite(motionPersistence)
-            ? Math.max(0, Math.min(100, Math.round(motionPersistence)))
-            : "0";
+    setText(
+        elements.persistence,
+        Number.isFinite(
+            persistence
+        )
+            ?
+            Math.max(
+                0,
+                Math.min(
+                    MOTION_PERSISTENCE_MAX,
+                    Math.round(
+                        persistence
+                    )
+                )
+            )
+            :
+            "0"
+    );
 
     const confidenceInfo =
-        confidenceClassification(confidence);
+        confidenceClassification(
+            confidence
+        );
 
-    confidenceLevelElement.textContent =
-        confidenceInfo.label;
+    if (
+        elements.confidenceLevel
+    )
+    {
+        elements.confidenceLevel.textContent =
+            confidenceInfo.label;
 
-    confidenceLevelElement.className =
-        `confidence-badge ${confidenceInfo.className}`;
+        elements.confidenceLevel.className =
+            `confidence-badge ${confidenceInfo.className}`;
+    }
 
     const velocityState =
-        sector.velocity_state ?? "Unknown";
+        sector.velocity_state
+        ??
+        "Unknown";
 
-    velocityStateElement.textContent = velocityState;
-    velocityStateElement.className = "state-value";
-
-    switch (velocityState)
+    if (
+        elements.velocityState
+    )
     {
-        case "Approaching":
-            velocityStateElement.classList.add(
-                "status-danger"
-            );
-            break;
+        elements.velocityState.textContent =
+            velocityState;
 
-        case "Receding":
-            velocityStateElement.classList.add(
-                "status-online"
-            );
-            break;
+        elements.velocityState.className =
+            "state-value";
 
-        case "Stationary":
-            velocityStateElement.classList.add(
-                "status-warning"
-            );
-            break;
+        switch (
+            velocityState
+        )
+        {
+            case "Approaching":
 
-        default:
-            velocityStateElement.classList.add(
-                "status-unknown"
-            );
-            break;
+                elements.velocityState.classList.add(
+                    "status-danger"
+                );
+
+                break;
+
+            case "Receding":
+
+                elements.velocityState.classList.add(
+                    "status-online"
+                );
+
+                break;
+
+            case "Stationary":
+
+                elements.velocityState.classList.add(
+                    "status-warning"
+                );
+
+                break;
+
+            default:
+
+                elements.velocityState.classList.add(
+                    "status-unknown"
+                );
+
+                break;
+        }
     }
 }
 
-/*****************************************************************************/
-/* Confidence Presentation                                                   */
-/*****************************************************************************/
-
-function confidenceClassification(confidence)
-{
-    if (!Number.isFinite(confidence) || confidence <= 0)
-    {
-        return {
-            label: "INVALID",
-            className: "confidence-invalid"
-        };
-    }
-
-    if (confidence >= CONFIDENCE_HIGH)
-    {
-        return {
-            label: "HIGH",
-            className: "confidence-high"
-        };
-    }
-
-    if (confidence >= CONFIDENCE_MEDIUM)
-    {
-        return {
-            label: "MEDIUM",
-            className: "confidence-medium"
-        };
-    }
-
-    return {
-        label: "LOW",
-        className: "confidence-low"
-    };
-}
-
-/*****************************************************************************/
-/* JSON Viewer                                                               */
-/*****************************************************************************/
-
-function updateObservationJSON(currentObservation)
-{
-    observationJsonElement.textContent =
-        JSON.stringify(
-            currentObservation,
-            null,
-            4
-        );
-}
 
 /*****************************************************************************/
 /* System Status                                                             */
 /*****************************************************************************/
 
-function updateSystemStatus(currentObservation)
+function updateSystemStatus(
+    message
+)
 {
-    if (connected)
-    {
-        setStatus(
-            browserStatusElement,
-            "CONNECTED",
-            "status-online"
-        );
-    }
-    else
-    {
-        setStatus(
-            browserStatusElement,
+    setStatus(
+        browserStatusElement,
+        connected
+            ?
+            "CONNECTED"
+            :
             "DISCONNECTED",
+        connected
+            ?
+            "status-online"
+            :
             "status-offline"
-        );
-    }
+    );
 
-    /* A valid tof_frame proves that RouterBridge is operational. */
-
+    /*
+     * Receiving a valid tof_frame means the
+     * Browser -> Python -> RouterBridge path is operational.
+     */
     setStatus(
         bridgeStatusElement,
         "CONNECTED",
         "status-online"
     );
 
-    if (currentObservation.status === "ONLINE")
+    const sensors =
+        orderedSensors(
+            message
+        );
+
+    const onlineCount =
+        sensors.filter(
+            (sensor) =>
+                sensor.observation
+                &&
+                sensor.observation.status
+                ===
+                "ONLINE"
+        ).length;
+
+    setText(
+        onlineSensorCountElement,
+        onlineCount
+    );
+
+    setText(
+        observationNumberElement,
+        message.observation_number
+        ??
+        0
+    );
+
+    if (
+        onlineCount
+        ===
+        SENSOR_COUNT
+    )
     {
         setStatus(
             tofStatusElement,
-            "ONLINE",
+            "ALL ONLINE",
             "status-online"
+        );
+    }
+    else if (
+        onlineCount > 0
+    )
+    {
+        setStatus(
+            tofStatusElement,
+            `${onlineCount}/${SENSOR_COUNT} ONLINE`,
+            "status-warning"
         );
     }
     else
     {
         setStatus(
             tofStatusElement,
-            currentObservation.status ?? "OFFLINE",
+            "OFFLINE",
             "status-offline"
         );
     }
-
-    setText(
-        historySizeElement,
-        currentObservation.history_size ?? 0
-    );
-
-    setText(
-        historyCapacityElement,
-        HISTORY_CAPACITY
-    );
 }
+
 
 /*****************************************************************************/
 /* Heatmaps                                                                  */
 /*****************************************************************************/
 
-function updateHeatmaps(message)
+function updateHeatmaps(
+    sensor
+)
 {
-    if (message.image)
+    if (
+        sensor.image
+    )
     {
         drawDistanceHeatmap(
-            message.image
+            sensor.image
         );
     }
 
-    if (message.confidence_image)
+    if (
+        sensor.confidence_image
+    )
     {
         drawConfidenceHeatmap(
-            message.confidence_image
+            sensor.confidence_image
         );
     }
 }
 
-function drawDistanceHeatmap(image)
+
+function drawDistanceHeatmap(
+    image
+)
 {
     drawHeatmap(
         distanceCtx,
         distanceCanvas,
         image,
         distanceToColor,
-        (value) => value > 0 ? `${Math.round(value)}` : ""
+        (value) =>
+            value > 0
+                ?
+                `${Math.round(value)}`
+                :
+                ""
     );
 }
 
-function drawConfidenceHeatmap(image)
+
+function drawConfidenceHeatmap(
+    image
+)
 {
     drawHeatmap(
         confidenceCtx,
         confidenceCanvas,
         image,
         confidenceToColor,
-        (value) => Number.isFinite(Number(value))
-            ? `${Math.round(Number(value))}%`
-            : ""
+        (value) =>
+            Number.isFinite(
+                Number(value)
+            )
+                ?
+                `${Math.round(
+                    Number(value)
+                )}`
+                :
+                ""
     );
 }
 
+
+/*****************************************************************************/
+/* Generic 4x4 Heatmap                                                       */
+/*****************************************************************************/
+
 function drawHeatmap(
     context,
-    targetCanvas,
+    canvas,
     image,
     colorFunction,
     labelFunction
 )
 {
-    if (!Array.isArray(image) || image.length === 0)
+    if (
+        !context
+        ||
+        !canvas
+        ||
+        !Array.isArray(
+            image
+        )
+        ||
+        image.length === 0
+    )
+    {
         return;
+    }
 
-    const rows = image.length;
-    const cols = image[0].length;
+    const rows =
+        image.length;
 
-    if (rows !== HEATMAP_ROWS || cols !== HEATMAP_COLS)
+    const cols =
+        Array.isArray(
+            image[0]
+        )
+            ?
+            image[0].length
+            :
+            0;
+
+    if (
+        rows !== HEATMAP_ROWS
+        ||
+        cols !== HEATMAP_COLS
+    )
     {
         console.warn(
             "Unexpected heatmap size:",
             rows,
             "x",
-            cols
+            cols,
+            "| expected 4 x 4"
         );
     }
 
+    if (
+        rows === 0
+        ||
+        cols === 0
+    )
+    {
+        return;
+    }
+
     const cellWidth =
-        targetCanvas.width / cols;
+        canvas.width
+        /
+        cols;
 
     const cellHeight =
-        targetCanvas.height / rows;
+        canvas.height
+        /
+        rows;
 
     context.clearRect(
         0,
         0,
-        targetCanvas.width,
-        targetCanvas.height
+        canvas.width,
+        canvas.height
     );
 
-    for (let row = 0; row < rows; row++)
+    for (
+        let row = 0;
+        row < rows;
+        row++
+    )
     {
-        for (let col = 0; col < cols; col++)
+        for (
+            let col = 0;
+            col < cols;
+            col++
+        )
         {
             const value =
-                Number(image[row][col]);
+                Number(
+                    image[
+                        row
+                    ][
+                        col
+                    ]
+                );
+
+            const background =
+                colorFunction(
+                    value
+                );
 
             context.fillStyle =
-                colorFunction(value);
+                background;
 
             context.fillRect(
-                col * cellWidth,
-                row * cellHeight,
+                col
+                *
                 cellWidth,
+
+                row
+                *
+                cellHeight,
+
+                cellWidth,
+
                 cellHeight
             );
 
-            context.strokeStyle = "#475569";
-            context.lineWidth = 1;
+            context.strokeStyle =
+                "#475569";
+
+            context.lineWidth =
+                1;
 
             context.strokeRect(
-                col * cellWidth,
-                row * cellHeight,
+                col
+                *
                 cellWidth,
+
+                row
+                *
+                cellHeight,
+
+                cellWidth,
+
                 cellHeight
             );
 
             const label =
-                labelFunction(value);
+                labelFunction(
+                    value
+                );
 
             if (label)
             {
                 context.fillStyle =
-                    readableTextColor(
-                        colorFunction(value)
-                    );
+                    "#111827";
 
                 context.font =
-                    "bold 12px Arial";
+                    "bold 20px Arial";
 
                 context.textAlign =
                     "center";
@@ -749,8 +2170,18 @@ function drawHeatmap(
 
                 context.fillText(
                     label,
-                    col * cellWidth + cellWidth / 2,
-                    row * cellHeight + cellHeight / 2
+
+                    col
+                    *
+                    cellWidth
+                    +
+                    cellWidth / 2,
+
+                    row
+                    *
+                    cellHeight
+                    +
+                    cellHeight / 2
                 );
             }
         }
@@ -758,153 +2189,361 @@ function drawHeatmap(
 
     drawSectorBoundaries(
         context,
-        targetCanvas,
+        canvas,
         cellWidth
     );
 }
 
+
+/*****************************************************************************/
+/* Sector Boundaries                                                         */
+/*****************************************************************************/
+
+/*
+ * Final 4x4 local-sector definition:
+ *
+ *     col 0 | col 1   col 2 | col 3
+ *       S0  |       S1      |   S2
+ *
+ * S0 = left-most column
+ * S1 = middle two columns
+ * S2 = right-most column
+ *
+ * The red boundaries occur after columns 0 and 2.
+ */
+
 function drawSectorBoundaries(
     context,
-    targetCanvas,
+    canvas,
     cellWidth
 )
 {
     context.save();
 
-    context.strokeStyle = "#dc2626";
-    context.lineWidth = 3;
+    context.strokeStyle =
+        "#dc2626";
 
+    context.lineWidth =
+        4;
+
+    /*
+     * S0 | S1 boundary
+     */
     context.beginPath();
-    context.moveTo(cellWidth * 2, 0);
-    context.lineTo(cellWidth * 2, targetCanvas.height);
+
+    context.moveTo(
+        cellWidth,
+        0
+    );
+
+    context.lineTo(
+        cellWidth,
+        canvas.height
+    );
+
     context.stroke();
 
+    /*
+     * S1 | S2 boundary
+     */
     context.beginPath();
-    context.moveTo(cellWidth * 5, 0);
-    context.lineTo(cellWidth * 5, targetCanvas.height);
+
+    context.moveTo(
+        cellWidth
+        *
+        3,
+        0
+    );
+
+    context.lineTo(
+        cellWidth
+        *
+        3,
+        canvas.height
+    );
+
     context.stroke();
 
     context.restore();
 }
 
+
 /*****************************************************************************/
-/* Heatmap Colour Maps                                                       */
+/* Distance Heatmap Colour                                                   */
 /*****************************************************************************/
 
-function distanceToColor(distance)
+function distanceToColor(
+    distance
+)
 {
-    if (!Number.isFinite(distance) || distance <= 0)
+    if (
+        !Number.isFinite(
+            distance
+        )
+        ||
+        distance <= 0
+        ||
+        distance >= INVALID_DISTANCE
+    )
+    {
         return "#ffffff";
-
-    if (distance >= INVALID_DISTANCE)
-        return "#ffffff";
+    }
 
     const normalized =
-        Math.min(distance, MAX_DISTANCE) / MAX_DISTANCE;
+        Math.min(
+            distance,
+            MAX_DISTANCE
+        )
+        /
+        MAX_DISTANCE;
 
-    /* 0 mm -> red, 3000 mm -> green */
-
+    /*
+     * 0 mm -> red
+     * 3000 mm -> green
+     */
     const hue =
-        normalized * 120;
+        normalized
+        *
+        120;
 
     return `hsl(${hue}, 100%, 50%)`;
 }
 
-function confidenceToColor(confidence)
+
+/*****************************************************************************/
+/* Confidence Heatmap Colour                                                 */
+/*****************************************************************************/
+
+function confidenceToColor(
+    confidence
+)
 {
-    if (!Number.isFinite(confidence) || confidence <= 0)
+    if (
+        !Number.isFinite(
+            confidence
+        )
+        ||
+        confidence <= 0
+    )
+    {
         return "#f8fafc";
+    }
 
     const normalized =
-        Math.max(0, Math.min(100, confidence));
-
-    /* 0% -> red, 100% -> green */
+        Math.max(
+            0,
+            Math.min(
+                100,
+                confidence
+            )
+        );
 
     const hue =
-        normalized * 1.2;
+        normalized
+        *
+        1.2;
 
     return `hsl(${hue}, 85%, 48%)`;
 }
 
-/*
- * The generated heatmap colors are mostly bright. Black text provides the
- * clearest contrast for this palette. Kept as a helper to make the renderer
- * easy to extend later.
- */
-function readableTextColor(_background)
-{
-    return "#111827";
-}
 
 /*****************************************************************************/
-/* Utilities                                                                 */
+/* JSON Viewer                                                               */
 /*****************************************************************************/
 
-function setText(
-    element,
-    value
+function updateObservationJSON(
+    message
 )
 {
-    if (!element)
+    if (!observationJsonElement)
         return;
 
-    element.textContent =
-        value ?? "--";
+    observationJsonElement.textContent =
+        JSON.stringify(
+            {
+                observation_number:
+                    message.observation_number,
+
+                timestamp:
+                    message.timestamp,
+
+                configuration:
+                    message.configuration,
+
+                sensors:
+                    message.sensors,
+
+                attention:
+                    message.attention,
+
+                feedback:
+                    message.feedback
+            },
+            null,
+            4
+        );
 }
 
-function setStatus(
-    element,
-    value,
-    className
-)
-{
-    if (!element)
-        return;
-
-    element.textContent = value;
-    element.className = className;
-}
-
-function formatNumber(
-    value,
-    digits
-)
-{
-    const number = Number(value);
-
-    if (!Number.isFinite(number))
-        return "--";
-
-    return number.toFixed(digits);
-}
-
-function validateObservation(currentObservation)
-{
-    if (!currentObservation)
-        return false;
-
-    if (!Array.isArray(currentObservation.sectors))
-        return false;
-
-    return currentObservation.sectors.length === 3;
-}
 
 /*****************************************************************************/
-/* Resize                                                                    */
+/* Socket.IO                                                                 */
+/*****************************************************************************/
+
+socket =
+    io();
+
+
+socket.on(
+    "connect",
+    () =>
+    {
+        connected =
+            true;
+
+        console.log(
+            "Connected to backend."
+        );
+
+        setStatus(
+            browserStatusElement,
+            "CONNECTED",
+            "status-online"
+        );
+
+        socket.emit(
+            "get_initial_state",
+            {}
+        );
+    }
+);
+
+
+socket.on(
+    "disconnect",
+    () =>
+    {
+        connected =
+            false;
+
+        console.log(
+            "Disconnected from backend."
+        );
+
+        setStatus(
+            browserStatusElement,
+            "DISCONNECTED",
+            "status-offline"
+        );
+
+        setStatus(
+            bridgeStatusElement,
+            "WAITING",
+            "status-warning"
+        );
+
+        setStatus(
+            tofStatusElement,
+            "OFFLINE",
+            "status-offline"
+        );
+
+        setMotorFeedbackUnavailable(
+            "CONNECTION LOST",
+            "motor-state-fault"
+        );
+    }
+);
+
+
+/*****************************************************************************/
+/* ToF Frame Message                                                         */
+/*****************************************************************************/
+
+socket.on(
+    "tof_frame",
+    (message) =>
+    {
+        if (!message)
+            return;
+
+        /*
+         * SixthSense v3.0 primary payload:
+         *
+         * message.sensors[0] = T1 / Front-right
+         * message.sensors[1] = T2 / Front
+         * message.sensors[2] = T3 / Front-left
+         * message.sensors[3] = T4 / Rear-left
+         * message.sensors[4] = T5 / Rear
+         * message.sensors[5] = T6 / Rear-right
+         */
+        if (
+            !Array.isArray(
+                message.sensors
+            )
+            ||
+            message.sensors.length === 0
+        )
+        {
+            console.warn(
+                "tof_frame does not contain "
+                +
+                "a multi-ToF sensors array."
+            );
+
+            return;
+        }
+
+        lastMessage =
+            message;
+
+        messageCount++;
+
+        setText(
+            messageCountElement,
+            messageCount
+        );
+
+        setText(
+            lastUpdateElement,
+            new Date().toLocaleTimeString()
+        );
+
+        if (
+            message.app_version
+        )
+        {
+            setText(
+                backendVersionElement,
+                message.app_version
+            );
+        }
+
+        updateDashboard(
+            message
+        );
+    }
+);
+
+
+/*****************************************************************************/
+/* Window Resize                                                             */
 /*****************************************************************************/
 
 window.addEventListener(
     "resize",
     () =>
     {
-        if (!lastMessage)
-            return;
-
-        updateHeatmaps(
+        if (
             lastMessage
-        );
+        )
+        {
+            updateSelectedSensor(
+                lastMessage
+            );
+        }
     }
 );
+
 
 /*****************************************************************************/
 /* Startup                                                                   */
@@ -915,7 +2554,8 @@ window.addEventListener(
     initializeDashboard
 );
 
+
 /*****************************************************************************/
 /* End of File                                                               */
-/* SixthSense Dashboard v2.3.0                                               */
+/* SixthSense Dashboard v3.0.0                                               */
 /*****************************************************************************/

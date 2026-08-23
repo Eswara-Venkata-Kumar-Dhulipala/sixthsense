@@ -1,13 +1,42 @@
 // ============================================================================
 // SixthSense
+// Version 3.0.0
 // Arduino UNO Q
-// VL53L5CX 8x8 ToF Sensor
+// 6 x VL53L5CX Multi-ToF Observation Bridge
 //
-// Production Bridge + Snapshot + Initialization Diagnostics
+// Fixed acquisition configuration:
+//   Sensors                : 6 x VL53L5CX
+//   Resolution             : 4 x 4
+//   Zones / sensor         : 16
+//   Total zones            : 96
+//   Requested ranging rate : 30 Hz
+//   Integration time       : 20 ms
+//   I2C                    : 400 kHz
+//   SparkFun packet size   : 128 bytes
+//
+// Mux mapping:
+//   T1 -> CH0 -> Front-right
+//   T2 -> CH1 -> Front
+//   T3 -> CH2 -> Front-left
+//   T4 -> CH5 -> Rear-left
+//   T5 -> CH6 -> Rear
+//   T6 -> CH7 -> Rear-right
+//
+// Bridge architecture:
+//   - Sensors acquire continuously on the MCU.
+//   - A six-sensor observation is published only when all six sensors have
+//     produced at least one fresh frame since the previous publication.
+//   - Published data remains immutable until Python calls consume_observation().
+//   - All 96 zones are flattened per signal for efficient Bridge transfer.
+//   - Python sends an MCU-friendly four-bit motor mask through RouterBridge.
+//   - The MCU drives M1-M4 and turns them off if feedback commands stop.
 // ============================================================================
 
 #include <Wire.h>
 #include <array>
+#include <algorithm>
+
+#include <zephyr/sys/atomic.h>
 
 #include <Arduino_RouterBridge.h>
 #include <SparkFun_VL53L5CX_Library.h>
@@ -16,91 +45,347 @@
 // Constants
 // ============================================================================
 
-constexpr uint8_t IMAGE_SIZE = 64;
+constexpr uint8_t NUM_SENSORS = 6;
+
+constexpr uint8_t IMAGE_ROWS = 4;
+constexpr uint8_t IMAGE_COLS = 4;
+constexpr uint8_t ZONES_PER_SENSOR = 16;
+constexpr uint16_t TOTAL_ZONES = NUM_SENSORS * ZONES_PER_SENSOR;
+
 constexpr uint8_t TARGET_INDEX = 0;
 
 constexpr uint32_t SERIAL_BAUD_RATE = 115200;
+
 constexpr uint32_t I2C_SPEED = 400000;
 constexpr uint8_t SENSOR_ADDRESS = 0x29;
+constexpr uint8_t MUX_ADDRESS = 0x70;
+constexpr uint8_t TOF_PACKET_SIZE = 128;
 
-constexpr uint8_t SENSOR_INIT_RETRIES = 10;
-constexpr uint32_t SENSOR_RETRY_DELAY_MS = 500;
+constexpr uint8_t RANGING_FREQUENCY_HZ = 30;
+constexpr uint32_t INTEGRATION_TIME_MS = 20;
 
-// ============================================================================
-// Sensor
-// ============================================================================
+constexpr uint8_t NUM_MOTORS = 4;
 
-SparkFun_VL53L5CX tof;
-VL53L5CX_ResultsData measurementData;
+// PWM outputs for M1 Front, M2 Left, M3 Rear, and M4 Right.
+// Connect these pins only to motor-driver inputs, never directly to motors.
+// Change this one array if the final driver wiring uses different PWM pins.
+constexpr std::array<uint8_t, NUM_MOTORS> MOTOR_PWM_PINS =
+{
+    5,   // bit 0 -> M1 -> Front
+    6,   // bit 1 -> M2 -> Left
+    9,   // bit 2 -> M3 -> Rear
+    10   // bit 3 -> M4 -> Right
+};
 
-// ============================================================================
-// Live Sensor Buffers
-// ============================================================================
+constexpr uint8_t MOTOR_PWM_DUTY = 255;
 
-// Per-target outputs
+constexpr uint8_t MOTOR_MASK_M1 = 1U << 0;
+constexpr uint8_t MOTOR_MASK_M2 = 1U << 1;
+constexpr uint8_t MOTOR_MASK_M3 = 1U << 2;
+constexpr uint8_t MOTOR_MASK_M4 = 1U << 3;
 
-std::array<int16_t, IMAGE_SIZE> liveDistance;
-std::array<uint32_t, IMAGE_SIZE> liveSignal;
-std::array<uint16_t, IMAGE_SIZE> liveSigma;
-std::array<uint8_t, IMAGE_SIZE> liveStatus;
-std::array<uint8_t, IMAGE_SIZE> liveReflectance;
+constexpr uint8_t MOTOR_MASK_ALL =
+    MOTOR_MASK_M1
+    |
+    MOTOR_MASK_M2
+    |
+    MOTOR_MASK_M3
+    |
+    MOTOR_MASK_M4;
 
-// Per-zone outputs
+// Python refreshes the current mask every 500 ms. If the MPU application,
+// Bridge, or sensor pipeline stops, this watchdog removes stale vibration.
+constexpr uint32_t MOTOR_COMMAND_TIMEOUT_MS = 1000;
 
-std::array<uint32_t, IMAGE_SIZE> liveAmbient;
-std::array<uint8_t, IMAGE_SIZE> liveTargets;
-std::array<uint32_t, IMAGE_SIZE> liveSpads;
+constexpr uint8_t SENSOR_INIT_RETRIES = 5;
+constexpr uint32_t SENSOR_RETRY_DELAY_MS = 250;
 
-// ============================================================================
-// Snapshot Buffers
-// ============================================================================
-
-// Per-target outputs
-
-std::array<int16_t, IMAGE_SIZE> snapshotDistance;
-std::array<uint32_t, IMAGE_SIZE> snapshotSignal;
-std::array<uint16_t, IMAGE_SIZE> snapshotSigma;
-std::array<uint8_t, IMAGE_SIZE> snapshotStatus;
-std::array<uint8_t, IMAGE_SIZE> snapshotReflectance;
-
-// Per-zone outputs
-
-std::array<uint32_t, IMAGE_SIZE> snapshotAmbient;
-std::array<uint8_t, IMAGE_SIZE> snapshotTargets;
-std::array<uint32_t, IMAGE_SIZE> snapshotSpads;
-
-// ============================================================================
-// Metadata
-// ============================================================================
-
-uint32_t liveFrameCounter = 0;
-uint32_t liveTimestamp = 0;
-
-uint32_t snapshotFrameCounter = 0;
-uint32_t snapshotTimestamp = 0;
-
-bool sensorRunning = false;
+constexpr std::array<uint8_t, NUM_SENSORS> SENSOR_MUX_CHANNELS =
+{
+    0,  // T1 -> Front-right
+    1,  // T2 -> Front
+    2,  // T3 -> Front-left
+    5,  // T4 -> Rear-left
+    6,  // T5 -> Rear
+    7   // T6 -> Rear-right
+};
 
 // ============================================================================
-// Sensor Initialization Diagnostic Code
+// Sensor Objects
+// ============================================================================
+
+SparkFun_VL53L5CX tof1;
+SparkFun_VL53L5CX tof2;
+SparkFun_VL53L5CX tof3;
+SparkFun_VL53L5CX tof4;
+SparkFun_VL53L5CX tof5;
+SparkFun_VL53L5CX tof6;
+
+std::array<SparkFun_VL53L5CX *, NUM_SENSORS> tofSensors =
+{
+    &tof1,
+    &tof2,
+    &tof3,
+    &tof4,
+    &tof5,
+    &tof6
+};
+
+std::array<VL53L5CX_ResultsData, NUM_SENSORS> measurementData;
+
+// ============================================================================
+// Sensor Frame
+// ============================================================================
+
+struct SensorFrame
+{
+    // Per-target outputs
+    std::array<int16_t, ZONES_PER_SENSOR> distance {};
+    std::array<uint32_t, ZONES_PER_SENSOR> signal {};
+    std::array<uint16_t, ZONES_PER_SENSOR> sigma {};
+    std::array<uint8_t, ZONES_PER_SENSOR> status {};
+    std::array<uint8_t, ZONES_PER_SENSOR> reflectance {};
+
+    // Per-zone outputs
+    std::array<uint32_t, ZONES_PER_SENSOR> ambient {};
+    std::array<uint8_t, ZONES_PER_SENSOR> targets {};
+    std::array<uint32_t, ZONES_PER_SENSOR> spads {};
+
+    uint32_t frameCounter = 0;
+    uint32_t timestamp = 0;
+
+    // True once this sensor has produced a new frame since the last
+    // six-sensor publication.
+    bool fresh = false;
+};
+
+std::array<SensorFrame, NUM_SENSORS> liveFrames;
+std::array<SensorFrame, NUM_SENSORS> publishedFrames;
+
+// ============================================================================
+// Initialization State
 // ============================================================================
 //
-//  0  -> initialization not completed
-//  1  -> sensor initialized successfully
+// Sensor init codes:
 //
-// -1  -> tof.begin() / sensor detection failed
-// -2  -> setResolution() failed
-// -3  -> setRangingFrequency() failed
-// -4  -> setIntegrationTime() failed
-// -5  -> startRanging() failed
+//   0   -> initialization not completed
+//   1   -> initialized successfully
+//
+//  -1   -> mux channel selection failed
+//  -2   -> sensor probe / begin failed
+//  -3   -> 128-byte packet-size configuration failed
+//  -4   -> 4x4 resolution configuration failed
+//  -5   -> 30 Hz ranging-frequency configuration failed
+//  -6   -> 20 ms integration-time configuration failed
+//  -7   -> startRanging() failed
+// -10   -> I2C mux initialization failed
 //
 // ============================================================================
 
-int32_t sensorInitCode = 0;
+std::array<int32_t, NUM_SENSORS> sensorInitCodes {};
+std::array<uint8_t, NUM_SENSORS> sensorReadyFlags {};
+
+bool muxReady = false;
+bool sensorsRunning = false;
 
 // ============================================================================
-// I2C Probe
+// Publication State
 // ============================================================================
+
+atomic_t observationReady = ATOMIC_INIT(0);
+atomic_t observationCounter = ATOMIC_INIT(0);
+atomic_t muxSelectErrors = ATOMIC_INIT(0);
+
+atomic_t sensorReadErrors[NUM_SENSORS] =
+{
+    ATOMIC_INIT(0),
+    ATOMIC_INIT(0),
+    ATOMIC_INIT(0),
+    ATOMIC_INIT(0),
+    ATOMIC_INIT(0),
+    ATOMIC_INIT(0)
+};
+
+uint32_t publishedObservationTimestamp = 0;
+
+// ============================================================================
+// Feedback / Motor State
+// ============================================================================
+
+uint8_t activeMotorMask = 0;
+uint32_t lastMotorCommandTimestamp = 0;
+
+void applyMotorMask(
+    uint8_t requestedMask
+)
+{
+    const uint8_t validMask =
+        requestedMask
+        &
+        MOTOR_MASK_ALL;
+
+    for (
+        uint8_t motorIndex = 0;
+        motorIndex < NUM_MOTORS;
+        motorIndex++
+    )
+    {
+        const bool enabled =
+            (
+                validMask
+                &
+                static_cast<uint8_t>(
+                    1U << motorIndex
+                )
+            )
+            !=
+            0;
+
+        analogWrite(
+            MOTOR_PWM_PINS[
+                motorIndex
+            ],
+            enabled
+                ? MOTOR_PWM_DUTY
+                : 0
+        );
+    }
+
+    activeMotorMask = validMask;
+}
+
+void initializeMotorOutputs()
+{
+    for (
+        uint8_t motorIndex = 0;
+        motorIndex < NUM_MOTORS;
+        motorIndex++
+    )
+    {
+        pinMode(
+            MOTOR_PWM_PINS[
+                motorIndex
+            ],
+            OUTPUT
+        );
+
+        analogWrite(
+            MOTOR_PWM_PINS[
+                motorIndex
+            ],
+            0
+        );
+    }
+
+    activeMotorMask = 0;
+    lastMotorCommandTimestamp = millis();
+}
+
+uint32_t set_motor_mask(
+    uint32_t requestedMask
+)
+{
+    applyMotorMask(
+        static_cast<uint8_t>(
+            requestedMask
+            &
+            MOTOR_MASK_ALL
+        )
+    );
+
+    lastMotorCommandTimestamp = millis();
+
+    return static_cast<uint32_t>(
+        activeMotorMask
+    );
+}
+
+uint32_t get_motor_mask()
+{
+    return static_cast<uint32_t>(
+        activeMotorMask
+    );
+}
+
+void updateMotorWatchdog()
+{
+    if (activeMotorMask == 0)
+    {
+        return;
+    }
+
+    const uint32_t elapsed =
+        millis()
+        -
+        lastMotorCommandTimestamp;
+
+    if (elapsed >= MOTOR_COMMAND_TIMEOUT_MS)
+    {
+        applyMotorMask(
+            0
+        );
+    }
+}
+
+// ============================================================================
+// Mux Helpers
+// ============================================================================
+
+bool writeMuxControl(
+    uint8_t controlByte
+)
+{
+    Wire1.beginTransmission(
+        MUX_ADDRESS
+    );
+
+    Wire1.write(
+        controlByte
+    );
+
+    return Wire1.endTransmission() == 0;
+}
+
+bool selectMuxChannel(
+    uint8_t channel
+)
+{
+    if (channel > 7)
+    {
+        return false;
+    }
+
+    return writeMuxControl(
+        static_cast<uint8_t>(
+            1U << channel
+        )
+    );
+}
+
+bool disableAllMuxChannels()
+{
+    return writeMuxControl(
+        0x00
+    );
+}
+
+bool initMux()
+{
+    Wire1.beginTransmission(
+        MUX_ADDRESS
+    );
+
+    if (
+        Wire1.endTransmission()
+        !=
+        0
+    )
+    {
+        return false;
+    }
+
+    return disableAllMuxChannels();
+}
 
 bool probeSensorAddress()
 {
@@ -108,532 +393,872 @@ bool probeSensorAddress()
         SENSOR_ADDRESS
     );
 
-    const uint8_t result =
-        Wire1.endTransmission();
-
-    return result == 0;
+    return Wire1.endTransmission() == 0;
 }
 
 // ============================================================================
-// Diagnostic RPC Functions
+// Sensor Initialization
 // ============================================================================
 
-bool sensor_ready()
+bool configureSensor(
+    uint8_t sensorIndex
+)
 {
-    return sensorRunning;
-}
+    SparkFun_VL53L5CX &sensor =
+        *tofSensors[
+            sensorIndex
+        ];
 
-int32_t get_sensor_init_code()
-{
-    return sensorInitCode;
-}
+    const uint8_t muxChannel =
+        SENSOR_MUX_CHANNELS[
+            sensorIndex
+        ];
 
-uint32_t get_live_frame_counter()
-{
-    return liveFrameCounter;
-}
+    sensorInitCodes[
+        sensorIndex
+    ] = 0;
 
-uint32_t get_snapshot_frame_counter()
-{
-    return snapshotFrameCounter;
-}
+    sensorReadyFlags[
+        sensorIndex
+    ] = 0;
 
-// ============================================================================
-// Snapshot Data Getters
-// ============================================================================
-
-std::array<int16_t, IMAGE_SIZE> get_distance()
-{
-    return snapshotDistance;
-}
-
-std::array<uint32_t, IMAGE_SIZE> get_signal()
-{
-    return snapshotSignal;
-}
-
-std::array<uint16_t, IMAGE_SIZE> get_sigma()
-{
-    return snapshotSigma;
-}
-
-std::array<uint8_t, IMAGE_SIZE> get_status()
-{
-    return snapshotStatus;
-}
-
-std::array<uint8_t, IMAGE_SIZE> get_reflectance()
-{
-    return snapshotReflectance;
-}
-
-std::array<uint32_t, IMAGE_SIZE> get_ambient()
-{
-    return snapshotAmbient;
-}
-
-std::array<uint8_t, IMAGE_SIZE> get_targets()
-{
-    return snapshotTargets;
-}
-
-std::array<uint32_t, IMAGE_SIZE> get_spads()
-{
-    return snapshotSpads;
-}
-
-uint32_t get_timestamp()
-{
-    return snapshotTimestamp;
-}
-
-// ============================================================================
-// Capture Snapshot
-// ============================================================================
-
-uint32_t capture_snapshot()
-{
-    // No valid sensor frame yet.
-
-    if (liveFrameCounter == 0)
+    if (!selectMuxChannel(muxChannel))
     {
-        return 0;
+        sensorInitCodes[
+            sensorIndex
+        ] = -1;
+
+        return false;
     }
 
-    // ------------------------------------------------------------------------
-    // Copy complete live sensor state
-    // ------------------------------------------------------------------------
-
-    snapshotDistance = liveDistance;
-    snapshotSignal = liveSignal;
-    snapshotSigma = liveSigma;
-    snapshotStatus = liveStatus;
-    snapshotReflectance = liveReflectance;
-
-    snapshotAmbient = liveAmbient;
-    snapshotTargets = liveTargets;
-    snapshotSpads = liveSpads;
-
-    // ------------------------------------------------------------------------
-    // Snapshot metadata
-    // ------------------------------------------------------------------------
-
-    snapshotFrameCounter = liveFrameCounter;
-    snapshotTimestamp = liveTimestamp;
-
-    return snapshotFrameCounter;
-}
-
-// ============================================================================
-// Initialize VL53L5CX
-// ============================================================================
-
-bool initSensor()
-{
-    Serial.println();
-    Serial.println("========================================");
-    Serial.println("Initializing VL53L5CX");
-    Serial.println("========================================");
-
-    sensorInitCode = 0;
-
-    // ------------------------------------------------------------------------
-    // Start I2C
-    // ------------------------------------------------------------------------
-
-    Serial.println(
-        "Starting Wire1..."
-    );
-
-    Wire1.begin();
-
-    Wire1.setClock(
-        I2C_SPEED
-    );
-
-    Serial.println(
-        "I2C Ready"
-    );
-
-    // Give the sensor and Qwiic bus time to settle.
-
     delay(
-        500
+        10
     );
 
-    // ------------------------------------------------------------------------
-    // Sensor detection / driver initialization
-    // ------------------------------------------------------------------------
-
-    bool sensorDetected = false;
+    bool initialized = false;
 
     for (
-        uint8_t attempt = 1;
-        attempt <= SENSOR_INIT_RETRIES;
+        uint8_t attempt = 0;
+        attempt < SENSOR_INIT_RETRIES;
         attempt++
     )
     {
-        Serial.print(
-            "Sensor probe attempt "
-        );
-
-        Serial.print(
-            attempt
-        );
-
-        Serial.print(
-            "/"
-        );
-
-        Serial.println(
-            SENSOR_INIT_RETRIES
-        );
-
-        // --------------------------------------------------------------------
-        // Check whether anything responds at 0x29
-        // --------------------------------------------------------------------
-
-        if (!probeSensorAddress())
+        if (
+            probeSensorAddress()
+            &&
+            sensor.begin(
+                SENSOR_ADDRESS,
+                Wire1
+            )
+        )
         {
-            Serial.println(
-                "No I2C response at address 0x29"
-            );
-
-            delay(
-                SENSOR_RETRY_DELAY_MS
-            );
-
-            continue;
-        }
-
-        Serial.println(
-            "I2C device detected at 0x29"
-        );
-
-        // --------------------------------------------------------------------
-        // Initialize SparkFun driver
-        // --------------------------------------------------------------------
-
-        if (tof.begin(
-            SENSOR_ADDRESS,
-            Wire1
-        ))
-        {
-            sensorDetected = true;
-
-            Serial.println(
-                "VL53L5CX driver initialized"
-            );
-
+            initialized = true;
             break;
         }
-
-        Serial.println(
-            "tof.begin() failed - retrying"
-        );
 
         delay(
             SENSOR_RETRY_DELAY_MS
         );
     }
 
-    // ------------------------------------------------------------------------
-    // Sensor could not be initialized
-    // ------------------------------------------------------------------------
-
-    if (!sensorDetected)
+    if (!initialized)
     {
-        sensorInitCode = -1;
-
-        Serial.println(
-            "ERROR: VL53L5CX could not be initialized"
-        );
+        sensorInitCodes[
+            sensorIndex
+        ] = -2;
 
         return false;
     }
 
-    // ------------------------------------------------------------------------
-    // 8x8 resolution
-    // ------------------------------------------------------------------------
-
-    if (!tof.setResolution(
-        8 * 8
-    ))
-    {
-        sensorInitCode = -2;
-
-        Serial.println(
-            "ERROR: setResolution() failed"
-        );
-
-        return false;
-    }
-
-    Serial.println(
-        "Resolution : 8 x 8"
+    // SparkFun VL53L5CX library default is 32 bytes.
+    // 128 bytes was validated on UNO Q and reduces transfer overhead.
+    sensor.setWireMaxPacketSize(
+        TOF_PACKET_SIZE
     );
 
-    // ------------------------------------------------------------------------
-    // 15 Hz ranging
-    // ------------------------------------------------------------------------
-
-    if (!tof.setRangingFrequency(
-        15
-    ))
+    if (
+        sensor.getWireMaxPacketSize()
+        !=
+        TOF_PACKET_SIZE
+    )
     {
-        sensorInitCode = -3;
-
-        Serial.println(
-            "ERROR: setRangingFrequency() failed"
-        );
+        sensorInitCodes[
+            sensorIndex
+        ] = -3;
 
         return false;
     }
 
-    Serial.println(
-        "Frequency : 15 Hz"
-    );
-
-    // ------------------------------------------------------------------------
-    // Integration time
-    // ------------------------------------------------------------------------
-
-    if (!tof.setIntegrationTime(
-        20
+    if (!sensor.setResolution(
+        IMAGE_ROWS * IMAGE_COLS
     ))
     {
-        sensorInitCode = -4;
-
-        Serial.println(
-            "ERROR: setIntegrationTime() failed"
-        );
+        sensorInitCodes[
+            sensorIndex
+        ] = -4;
 
         return false;
     }
 
-    Serial.println(
-        "Integration Time : 20 ms"
-    );
+    if (!sensor.setRangingFrequency(
+        RANGING_FREQUENCY_HZ
+    ))
+    {
+        sensorInitCodes[
+            sensorIndex
+        ] = -5;
 
-    // ------------------------------------------------------------------------
-    // Closest target
-    // ------------------------------------------------------------------------
+        return false;
+    }
 
-    tof.setTargetOrder(
+    if (!sensor.setIntegrationTime(
+        INTEGRATION_TIME_MS
+    ))
+    {
+        sensorInitCodes[
+            sensorIndex
+        ] = -6;
+
+        return false;
+    }
+
+    sensor.setTargetOrder(
         SF_VL53L5CX_TARGET_ORDER::CLOSEST
     );
 
-    Serial.println(
-        "Target Order : Closest"
-    );
-
-    // ------------------------------------------------------------------------
-    // Start ranging
-    // ------------------------------------------------------------------------
-
-    if (!tof.startRanging())
+    if (!sensor.startRanging())
     {
-        sensorInitCode = -5;
-
-        Serial.println(
-            "ERROR: startRanging() failed"
-        );
+        sensorInitCodes[
+            sensorIndex
+        ] = -7;
 
         return false;
     }
 
-    Serial.println(
-        "Ranging Started"
-    );
+    sensorInitCodes[
+        sensorIndex
+    ] = 1;
 
-    sensorInitCode = 1;
+    sensorReadyFlags[
+        sensorIndex
+    ] = 1;
 
     return true;
 }
 
-// ============================================================================
-// Read One Sensor Frame
-// ============================================================================
-
-bool updateFrame()
+bool initSensors()
 {
-    // ------------------------------------------------------------------------
-    // New measurement available?
-    // ------------------------------------------------------------------------
-
-    if (!tof.isDataReady())
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
     {
-        return false;
+        if (!configureSensor(
+            sensorIndex
+        ))
+        {
+            return false;
+        }
+
+        delay(
+            20
+        );
     }
 
-    // ------------------------------------------------------------------------
-    // Retrieve VL53L5CX result structure
-    // ------------------------------------------------------------------------
+    return disableAllMuxChannels();
+}
 
-    if (!tof.getRangingData(
-        &measurementData
+// ============================================================================
+// Acquire One Sensor Frame
+// ============================================================================
+
+bool updateSensor(
+    uint8_t sensorIndex
+)
+{
+    SparkFun_VL53L5CX &sensor =
+        *tofSensors[
+            sensorIndex
+        ];
+
+    SensorFrame &frame =
+        liveFrames[
+            sensorIndex
+        ];
+
+    if (!selectMuxChannel(
+        SENSOR_MUX_CHANNELS[
+            sensorIndex
+        ]
     ))
     {
+        atomic_inc(
+            &muxSelectErrors
+        );
+
         return false;
     }
 
-    // ------------------------------------------------------------------------
-    // Copy every required sensor output
-    // ------------------------------------------------------------------------
+    // SparkFun isDataReady() returns false both when no frame is ready and
+    // when the readiness transaction cannot establish readiness. Therefore,
+    // "false" is not counted as a communication error here.
+    if (!sensor.isDataReady())
+    {
+        return false;
+    }
+
+    if (!sensor.getRangingData(
+        &measurementData[
+            sensorIndex
+        ]
+    ))
+    {
+        atomic_inc(
+            &sensorReadErrors[
+                sensorIndex
+            ]
+        );
+
+        return false;
+    }
 
     for (
         uint8_t zone = 0;
-        zone < IMAGE_SIZE;
+        zone < ZONES_PER_SENSOR;
         zone++
     )
     {
         const uint16_t targetIndex =
 
             zone
-            * VL53L5CX_NB_TARGET_PER_ZONE
+            *
+            VL53L5CX_NB_TARGET_PER_ZONE
 
             +
 
             TARGET_INDEX;
 
-        // --------------------------------------------------------------------
-        // Per-target outputs
-        // --------------------------------------------------------------------
-
-        liveDistance[zone] =
-            measurementData.distance_mm[
+        frame.distance[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].distance_mm[
                 targetIndex
             ];
 
-        liveSignal[zone] =
-            measurementData.signal_per_spad[
+        frame.signal[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].signal_per_spad[
                 targetIndex
             ];
 
-        liveSigma[zone] =
-            measurementData.range_sigma_mm[
+        frame.sigma[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].range_sigma_mm[
                 targetIndex
             ];
 
-        liveStatus[zone] =
-            measurementData.target_status[
+        frame.status[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].target_status[
                 targetIndex
             ];
 
-        liveReflectance[zone] =
-            measurementData.reflectance[
+        frame.reflectance[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].reflectance[
                 targetIndex
             ];
 
-        // --------------------------------------------------------------------
-        // Per-zone outputs
-        // --------------------------------------------------------------------
-
-        liveAmbient[zone] =
-            measurementData.ambient_per_spad[
+        frame.ambient[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].ambient_per_spad[
                 zone
             ];
 
-        liveTargets[zone] =
-            measurementData.nb_target_detected[
+        frame.targets[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].nb_target_detected[
                 zone
             ];
 
-        liveSpads[zone] =
-            measurementData.nb_spads_enabled[
+        frame.spads[
+            zone
+        ] =
+            measurementData[
+                sensorIndex
+            ].nb_spads_enabled[
                 zone
             ];
     }
 
-    // ------------------------------------------------------------------------
-    // Metadata
-    // ------------------------------------------------------------------------
+    frame.frameCounter++;
 
-    liveFrameCounter++;
-
-    liveTimestamp =
+    // Timestamp is the successful MCU read-completion time.
+    // It is not a hardware optical-exposure timestamp.
+    frame.timestamp =
         millis();
+
+    frame.fresh =
+        true;
 
     return true;
 }
 
 // ============================================================================
-// Initialize Buffers
+// Publish Immutable Six-Sensor Observation
 // ============================================================================
 
-void initializeBuffers()
+bool allSensorsFresh()
 {
-    // ------------------------------------------------------------------------
-    // Live
-    // ------------------------------------------------------------------------
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        if (!liveFrames[
+            sensorIndex
+        ].fresh)
+        {
+            return false;
+        }
+    }
 
-    liveDistance.fill(
+    return true;
+}
+
+void tryPublishObservation()
+{
+    // One-slot publication buffer.
+    // Do not overwrite data while Python is reading it.
+    if (
+        atomic_get(
+            &observationReady
+        )
+        !=
+        0
+    )
+    {
+        return;
+    }
+
+    if (!allSensorsFresh())
+    {
+        return;
+    }
+
+    uint32_t newestTimestamp = 0;
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        publishedFrames[
+            sensorIndex
+        ] =
+            liveFrames[
+                sensorIndex
+            ];
+
+        publishedFrames[
+            sensorIndex
+        ].fresh =
+            false;
+
+        newestTimestamp =
+            std::max(
+                newestTimestamp,
+                publishedFrames[
+                    sensorIndex
+                ].timestamp
+            );
+
+        liveFrames[
+            sensorIndex
+        ].fresh =
+            false;
+    }
+
+    publishedObservationTimestamp =
+        newestTimestamp;
+
+    const atomic_val_t nextCounter =
+        atomic_get(
+            &observationCounter
+        )
+        +
+        1;
+
+    atomic_set(
+        &observationCounter,
+        nextCounter
+    );
+
+    // Publish only after every immutable field above has been written.
+    atomic_set(
+        &observationReady,
+        1
+    );
+}
+
+// ============================================================================
+// Flatten Published Six-Sensor Arrays
+// ============================================================================
+
+std::array<int16_t, TOTAL_ZONES> get_distance()
+{
+    std::array<int16_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].distance[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+std::array<uint32_t, TOTAL_ZONES> get_signal()
+{
+    std::array<uint32_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].signal[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+std::array<uint16_t, TOTAL_ZONES> get_sigma()
+{
+    std::array<uint16_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].sigma[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+std::array<uint8_t, TOTAL_ZONES> get_status()
+{
+    std::array<uint8_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].status[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+std::array<uint8_t, TOTAL_ZONES> get_reflectance()
+{
+    std::array<uint8_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].reflectance[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+std::array<uint32_t, TOTAL_ZONES> get_ambient()
+{
+    std::array<uint32_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].ambient[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+std::array<uint8_t, TOTAL_ZONES> get_targets()
+{
+    std::array<uint8_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].targets[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+std::array<uint32_t, TOTAL_ZONES> get_spads()
+{
+    std::array<uint32_t, TOTAL_ZONES> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        for (
+            uint8_t zone = 0;
+            zone < ZONES_PER_SENSOR;
+            zone++
+        )
+        {
+            out[
+                sensorIndex
+                *
+                ZONES_PER_SENSOR
+                +
+                zone
+            ] =
+                publishedFrames[
+                    sensorIndex
+                ].spads[
+                    zone
+                ];
+        }
+    }
+
+    return out;
+}
+
+// ============================================================================
+// Published Metadata RPCs
+// ============================================================================
+
+uint32_t get_bridge_heartbeat()
+{
+    return millis();
+}
+
+bool system_ready()
+{
+    return sensorsRunning;
+}
+
+uint32_t get_pending_observation()
+{
+    if (
+        atomic_get(
+            &observationReady
+        )
+        ==
+        0
+    )
+    {
+        return 0;
+    }
+
+    return static_cast<uint32_t>(
+        atomic_get(
+            &observationCounter
+        )
+    );
+}
+
+uint32_t get_observation_timestamp()
+{
+    return publishedObservationTimestamp;
+}
+
+std::array<uint32_t, NUM_SENSORS> get_sensor_frame_counters()
+{
+    std::array<uint32_t, NUM_SENSORS> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        out[
+            sensorIndex
+        ] =
+            publishedFrames[
+                sensorIndex
+            ].frameCounter;
+    }
+
+    return out;
+}
+
+std::array<uint32_t, NUM_SENSORS> get_sensor_timestamps()
+{
+    std::array<uint32_t, NUM_SENSORS> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        out[
+            sensorIndex
+        ] =
+            publishedFrames[
+                sensorIndex
+            ].timestamp;
+    }
+
+    return out;
+}
+
+std::array<int32_t, NUM_SENSORS> get_sensor_init_codes()
+{
+    return sensorInitCodes;
+}
+
+std::array<uint8_t, NUM_SENSORS> get_sensor_ready_flags()
+{
+    return sensorReadyFlags;
+}
+
+std::array<uint32_t, NUM_SENSORS> get_sensor_read_errors()
+{
+    std::array<uint32_t, NUM_SENSORS> out {};
+
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
+    {
+        out[
+            sensorIndex
+        ] =
+            static_cast<uint32_t>(
+                atomic_get(
+                    &sensorReadErrors[
+                        sensorIndex
+                    ]
+                )
+            );
+    }
+
+    return out;
+}
+
+uint32_t get_mux_select_errors()
+{
+    return static_cast<uint32_t>(
+        atomic_get(
+            &muxSelectErrors
+        )
+    );
+}
+
+bool consume_observation(
+    uint32_t expectedObservation
+)
+{
+    if (
+        atomic_get(
+            &observationReady
+        )
+        ==
+        0
+    )
+    {
+        return false;
+    }
+
+    if (
+        static_cast<uint32_t>(
+            atomic_get(
+                &observationCounter
+            )
+        )
+        !=
+        expectedObservation
+    )
+    {
+        return false;
+    }
+
+    atomic_set(
+        &observationReady,
         0
     );
 
-    liveSignal.fill(
-        0
-    );
-
-    liveSigma.fill(
-        0
-    );
-
-    liveStatus.fill(
-        255
-    );
-
-    liveReflectance.fill(
-        0
-    );
-
-    liveAmbient.fill(
-        0
-    );
-
-    liveTargets.fill(
-        0
-    );
-
-    liveSpads.fill(
-        0
-    );
-
-    // ------------------------------------------------------------------------
-    // Snapshot
-    // ------------------------------------------------------------------------
-
-    snapshotDistance.fill(
-        0
-    );
-
-    snapshotSignal.fill(
-        0
-    );
-
-    snapshotSigma.fill(
-        0
-    );
-
-    snapshotStatus.fill(
-        255
-    );
-
-    snapshotReflectance.fill(
-        0
-    );
-
-    snapshotAmbient.fill(
-        0
-    );
-
-    snapshotTargets.fill(
-        0
-    );
-
-    snapshotSpads.fill(
-        0
-    );
+    return true;
 }
 
 // ============================================================================
@@ -642,51 +1267,55 @@ void initializeBuffers()
 
 void registerBridgeFunctions()
 {
-    // ------------------------------------------------------------------------
-    // Diagnostics
-    // ------------------------------------------------------------------------
-
     Bridge.provide(
-        "sensor_ready",
-        sensor_ready
+        "get_bridge_heartbeat",
+        get_bridge_heartbeat
     );
 
     Bridge.provide(
-        "get_sensor_init_code",
-        get_sensor_init_code
+        "system_ready",
+        system_ready
     );
 
     Bridge.provide(
-        "get_live_frame_counter",
-        get_live_frame_counter
+        "get_pending_observation",
+        get_pending_observation
     );
 
     Bridge.provide(
-        "get_snapshot_frame_counter",
-        get_snapshot_frame_counter
+        "get_observation_timestamp",
+        get_observation_timestamp
     );
-
-    // ------------------------------------------------------------------------
-    // Snapshot control
-    // ------------------------------------------------------------------------
 
     Bridge.provide(
-        "capture_snapshot",
-        capture_snapshot
+        "get_sensor_frame_counters",
+        get_sensor_frame_counters
     );
-
-    // ------------------------------------------------------------------------
-    // Metadata
-    // ------------------------------------------------------------------------
 
     Bridge.provide(
-        "get_timestamp",
-        get_timestamp
+        "get_sensor_timestamps",
+        get_sensor_timestamps
     );
 
-    // ------------------------------------------------------------------------
-    // Sensor outputs
-    // ------------------------------------------------------------------------
+    Bridge.provide(
+        "get_sensor_init_codes",
+        get_sensor_init_codes
+    );
+
+    Bridge.provide(
+        "get_sensor_ready_flags",
+        get_sensor_ready_flags
+    );
+
+    Bridge.provide(
+        "get_sensor_read_errors",
+        get_sensor_read_errors
+    );
+
+    Bridge.provide(
+        "get_mux_select_errors",
+        get_mux_select_errors
+    );
 
     Bridge.provide(
         "get_distance",
@@ -727,6 +1356,21 @@ void registerBridgeFunctions()
         "get_spads",
         get_spads
     );
+
+    Bridge.provide(
+        "set_motor_mask",
+        set_motor_mask
+    );
+
+    Bridge.provide(
+        "get_motor_mask",
+        get_motor_mask
+    );
+
+    Bridge.provide(
+        "consume_observation",
+        consume_observation
+    );
 }
 
 // ============================================================================
@@ -735,6 +1379,8 @@ void registerBridgeFunctions()
 
 void setup()
 {
+    initializeMotorOutputs();
+
     Serial.begin(
         SERIAL_BAUD_RATE
     );
@@ -745,80 +1391,81 @@ void setup()
 
     Serial.println();
     Serial.println("========================================");
-    Serial.println("SixthSense");
-    Serial.println("Arduino UNO Q");
-    Serial.println("VL53L5CX Production Bridge");
+    Serial.println("SixthSense v3.0.0");
+    Serial.println("6 x VL53L5CX Multi-ToF Bridge");
     Serial.println("========================================");
 
-    // ------------------------------------------------------------------------
-    // Initialize buffers
-    // ------------------------------------------------------------------------
+    Wire1.begin();
 
-    initializeBuffers();
+    Wire1.setClock(
+        I2C_SPEED
+    );
 
-    // ------------------------------------------------------------------------
-    // Initialize sensor
-    // ------------------------------------------------------------------------
+    muxReady =
+        initMux();
 
-    sensorRunning =
-        initSensor();
+    if (!muxReady)
+    {
+        sensorInitCodes.fill(
+            -10
+        );
 
-    // ------------------------------------------------------------------------
-    // Start RouterBridge
-    // ------------------------------------------------------------------------
+        sensorReadyFlags.fill(
+            0
+        );
+
+        sensorsRunning =
+            false;
+    }
+    else
+    {
+        sensorsRunning =
+            initSensors();
+    }
 
     Bridge.begin();
 
     registerBridgeFunctions();
 
-    // ------------------------------------------------------------------------
-    // Startup summary
-    // ------------------------------------------------------------------------
-
     Serial.println();
-    Serial.println("========================================");
+    Serial.println("Configuration:");
+    Serial.println("  Sensors       : 6");
+    Serial.println("  Resolution    : 4 x 4");
+    Serial.println("  Zones         : 96 total");
+    Serial.println("  Ranging       : 30 Hz requested");
+    Serial.println("  Integration   : 20 ms");
+    Serial.println("  I2C           : 400 kHz");
+    Serial.println("  Packet size   : 128 bytes");
+    Serial.println("  Motors        : M1=D5, M2=D6, M3=D9, M4=D10");
+    Serial.println("  Motor mask    : bit0=M1, bit1=M2, bit2=M3, bit3=M4");
+    Serial.println("  Motor timeout : 1000 ms");
 
-    if (sensorRunning)
+    if (sensorsRunning)
     {
-        Serial.println(
-            "Sensor Ready"
-        );
-
-        Serial.println(
-            "Bridge Ready"
-        );
-
-        Serial.println(
-            "Snapshot Interface Ready"
-        );
-
-        Serial.println(
-            "SixthSense System Ready"
-        );
+        Serial.println("  Status        : ALL SENSORS READY");
     }
     else
     {
-        Serial.println(
-            "Sensor Initialization FAILED"
-        );
+        Serial.println("  Status        : SENSOR INITIALIZATION FAILED");
 
-        Serial.print(
-            "Initialization Code : "
-        );
-
-        Serial.println(
-            sensorInitCode
-        );
-
-        Serial.println(
-            "Bridge diagnostic interface remains available"
-        );
+        for (
+            uint8_t sensorIndex = 0;
+            sensorIndex < NUM_SENSORS;
+            sensorIndex++
+        )
+        {
+            Serial.print("  T");
+            Serial.print(sensorIndex + 1);
+            Serial.print(" init code : ");
+            Serial.println(
+                sensorInitCodes[
+                    sensorIndex
+                ]
+            );
+        }
     }
 
-    Serial.println(
-        "========================================"
-    );
-
+    Serial.println("========================================");
     Serial.println();
 }
 
@@ -828,13 +1475,9 @@ void setup()
 
 void loop()
 {
-    // ------------------------------------------------------------------------
-    // Initialization failed
-    //
-    // Bridge remains alive so Python can retrieve sensorInitCode.
-    // ------------------------------------------------------------------------
+    updateMotorWatchdog();
 
-    if (!sensorRunning)
+    if (!sensorsRunning)
     {
         delay(
             100
@@ -843,72 +1486,22 @@ void loop()
         return;
     }
 
-    // ------------------------------------------------------------------------
-    // Continuous ranging
-    // ------------------------------------------------------------------------
-
-    if (updateFrame())
+    // Sequentially poll all six sensors.
+    //
+    // The timestamp stored for each frame is the MCU read-completion time.
+    // It must not be interpreted as the exact optical acquisition time.
+    for (
+        uint8_t sensorIndex = 0;
+        sensorIndex < NUM_SENSORS;
+        sensorIndex++
+    )
     {
-        // --------------------------------------------------------------------
-        // Low-rate Serial diagnostic.
-        //
-        // Sensor runs at 15 Hz, therefore this executes
-        // approximately once per second.
-        // --------------------------------------------------------------------
-
-        if (
-            liveFrameCounter % 15
-            ==
-            0
-        )
-        {
-            Serial.print(
-                "Live Frame : "
-            );
-
-            Serial.print(
-                liveFrameCounter
-            );
-
-            Serial.print(
-                " | Timestamp : "
-            );
-
-            Serial.print(
-                liveTimestamp
-            );
-
-            Serial.print(
-                " ms | Center : "
-            );
-
-            Serial.print(
-                liveDistance[
-                    27
-                ]
-            );
-
-            Serial.print(
-                " mm | Status : "
-            );
-
-            Serial.print(
-                liveStatus[
-                    27
-                ]
-            );
-
-            Serial.print(
-                " | Targets : "
-            );
-
-            Serial.println(
-                liveTargets[
-                    27
-                ]
-            );
-        }
+        updateSensor(
+            sensorIndex
+        );
     }
+
+    tryPublishObservation();
 
     delay(
         2

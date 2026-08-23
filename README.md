@@ -1,1563 +1,321 @@
 # SixthSense
 
-> **A Modular Physical AI Perception Framework for Assistive Navigation**
+> A closed-loop Physical AI prototype that converts 360-degree Time-of-Flight perception into directional haptic feedback.
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-v2.3.0-blue)
-![Status](https://img.shields.io/badge/Status-Active-success)
-![Platform](https://img.shields.io/badge/Platform-Arduino%20UNO%20Q-red)
-![Sensor](https://img.shields.io/badge/Sensor-VL53L5CX-brightgreen)
-![License](https://img.shields.io/badge/License-MPL--2.0-yellow)
+![Version](https://img.shields.io/badge/version-v3.0.0-blue)
+![Status](https://img.shields.io/badge/status-prototype-success)
+![Platform](https://img.shields.io/badge/platform-Arduino%20UNO%20Q-red)
+![Sensors](https://img.shields.io/badge/ToF-6%20%C3%97%20VL53L5CX-brightgreen)
+![License](https://img.shields.io/badge/license-MPL--2.0-yellow)
 
 </div>
 
----
+## Overview
 
-# Overview
+SixthSense is an open-source wearable assistive-navigation research prototype built around the Arduino UNO Q. Six VL53L5CX Time-of-Flight (ToF) sensors observe the space around the user, and four vibration motors communicate the direction of sustained approaching motion.
 
-**SixthSense** is an open-source Physical AI project that explores how wearable systems can perceive and understand their surroundings using Time-of-Flight (ToF) sensors.
+The project follows an observation-first architecture. It does not drive a motor from a single raw distance sample. Each frame passes through measurement-quality estimation, spatial sectoring, temporal velocity analysis, motion-state persistence, attention selection, and MCU-confirmed haptic feedback.
 
-Instead of directly converting raw sensor measurements into feedback, SixthSense follows an **Observation-First Architecture**.
+The current release is **SixthSense v3.0.0 — Multi-ToF Attention and Haptic Feedback Prototype**.
 
-Raw sensor data is progressively transformed into structured observations containing:
+## What v3.0.0 provides
 
-- Distance
-- Measurement confidence
-- Relative velocity
-- Velocity validity
-- Velocity state
-- Motion persistence
-- Temporal history
-- Sensor quality information
+- 6 × VL53L5CX sensors through an I2C multiplexer
+- 4×4 sensing per sensor: 16 zones each, 96 zones total
+- 3 directional sectors per sensor: 18 sectors total
+- Per-zone measurement confidence
+- Independent temporal history for every sensor
+- Smoothed relative range velocity and motion classification
+- Bounded motion persistence from 0 to 200
+- An interpretable Attention Engine
+- An MCU-facing Feedback Engine with a four-bit motor mask
+- 4 directional vibration motors with watchdog-based fail-safe shutdown
+- A real-time dashboard for all sensors, sectors, attention sources, masks, and motor states
 
-These observations can later be interpreted by higher-level reasoning modules such as the **Context Engine**, **Attention Engine**, and **Feedback Engine**.
+## System at a glance
 
-This layered approach keeps:
+| Parameter | v3.0.0 value |
+|---|---:|
+| ToF sensors | 6 |
+| ToF resolution | 4×4 |
+| Zones per sensor | 16 |
+| Total zones | 96 |
+| Sectors per sensor | 3 |
+| Total sectors | 18 |
+| Vibration motors | 4 |
+| Requested ranging frequency | 30 Hz |
+| Measured retrieved rate | approximately 14 Hz per sensor |
+| Velocity smoothing window | 5 valid samples |
+| Stationary band | −50 to +50 mm/s |
+| Motion-persistence range | 0–200 observations |
+| Haptic activation threshold | 10 observations |
+| Feedback keep-alive period | 500 ms |
+| MCU motor-command timeout | 1000 ms |
 
-- Perception
-- Environmental reasoning
-- Prioritization
-- User feedback
+The measured rate is an experimental observation, not a guaranteed runtime frequency. Persistence is observation-count based, so a threshold of 10 corresponds to about 0.71 seconds only when the relevant processing rate is approximately 14 observations per second.
 
-independent from one another, making the system easier to develop, validate, extend, and scale.
+## Runtime architecture
 
-The long-term goal is to build a wearable assistive navigation system capable of understanding the surrounding environment and providing intuitive guidance to visually impaired users.
+```mermaid
+flowchart TD
+    A[6 × VL53L5CX<br/>96 zones] --> B[Arduino acquisition<br/>I2C multiplexer]
+    B --> C[Immutable six-sensor<br/>Bridge observation]
+    C --> D[Confidence Engine]
+    D --> E[18 sector observations]
+    E --> F[Velocity estimation<br/>and 5-sample smoothing]
+    F --> G[Velocity state]
+    G --> H[Motion Persistence Engine]
+    H --> I[Attention Engine]
+    I --> J[4-bit motor mask]
+    J --> K[Feedback Engine]
+    K --> L[MCU PWM outputs<br/>M1–M4]
+    L --> M[Directional haptic feedback]
+    C --> N[Web dashboard]
+    I --> N
+    K --> N
+```
 
----
+The Arduino publishes a new multi-sensor observation only after all six sensors have produced a fresh frame. Published data remains stable until the Python side consumes it.
 
-# Current Release
+## Sensor arrangement
 
-## **v2.3.0 — Persistent ToF Observation Engine**
+| Sensor | Multiplexer channel | Direction |
+|---|---:|---|
+| T1 | CH0 | Front-right |
+| T2 | CH1 | Front |
+| T3 | CH2 | Front-left |
+| T4 | CH5 | Rear-left |
+| T5 | CH6 | Rear |
+| T6 | CH7 | Rear-right |
 
-Version **v2.3.0** extends the Confidence-Aware Temporal ToF Observation Engine introduced in v2.2.1 with a **Motion Persistence Engine**.
-
-Previous versions could estimate relative velocity and classify each sector as:
-
-- `Approaching`
-- `Stationary`
-- `Receding`
-
-Version v2.3.0 adds temporal evidence describing **how consistently a velocity state has been observed over successive processed observations**.
-
-The implementation maintains three independent bounded persistence counters per sector:
+After the software's left-right orientation correction, every 4×4 image is divided into:
 
 ```text
-Approaching Persistence : 0 ... 100
-Stationary Persistence  : 0 ... 100
-Receding Persistence    : 0 ... 100
+column 0       columns 1–2       column 3
+   S0               S1              S2
 ```
 
-For every processed velocity classification:
+S0 contains 4 zones, S1 contains 8 zones, and S2 contains 4 zones.
+
+## Observation pipeline
+
+### Confidence
+
+The Confidence Engine produces a 0–100 engineering measurement-quality score from target status, signal strength, range sigma, ambient activity, reflectance, detected targets, and enabled SPADs. It is a heuristic quality score—not a calibrated probability.
+
+Confidence is applied upstream. A zone with an invalid distance, no target, or a rejected target status receives zero confidence and is excluded from sector selection. The selected sector measurement then feeds velocity estimation.
+
+### Velocity state
+
+For each sector, relative range velocity is estimated from successive selected distances and smoothed over the most recent five valid values:
 
 ```text
-Approaching:
-    Approaching +1
-    Stationary  -1
-    Receding    -1
-
-Stationary:
-    Approaching -1
-    Stationary  +1
-    Receding    -1
-
-Receding:
-    Approaching -1
-    Stationary  -1
-    Receding    +1
-
-Unknown / other:
-    Approaching -1
-    Stationary  -1
-    Receding    -1
+velocity < −50 mm/s  → Approaching
+−50 to +50 mm/s      → Stationary
+velocity > +50 mm/s  → Receding
+invalid velocity     → Unknown
 ```
 
-All counters are saturated to:
+This is sensor-relative range change, not world-frame object velocity.
+
+### Motion persistence
+
+Each sector maintains separate counters for `Approaching`, `Stationary`, and `Receding`. The current state is reinforced by one while the other states decay by one. Unknown observations decay all three counters. Every counter is saturated to the range 0–200.
+
+`motion_persistence` exposes the counter belonging to the current velocity state. It is not a percentage, probability, object identifier, or proof that successive measurements belong to the same physical object.
+
+### Attention rule
+
+For v3.0.0, a sector requests haptic feedback only when both conditions are true:
 
 ```text
-0 ... 100
+velocity_state == "Approaching"
+motion_persistence >= 10
 ```
 
-The current velocity state's counter is exposed as:
-
-```text
-motion_persistence
-```
-
-For example:
-
-```text
-Velocity State     : Approaching
-Motion Persistence : 80
-```
-
-`Motion Persistence` is a bounded temporal consistency/evidence score. It is **not a percentage, probability, or object identity score**.
-
-Current implementation provides:
-
-- Real-time 8×8 Time-of-Flight sensing
-- Complete VL53L5CX measurement acquisition
-- Synchronized Arduino-side sensor snapshots
-- 64-zone confidence estimation
-- Confidence-aware obstacle selection
-- Three-sector obstacle observation
-- Temporal observation history
-- Relative velocity estimation
-- Velocity validity tracking
-- Velocity smoothing
-- Velocity state classification
-- `Unknown` state for unavailable/invalid velocity
-- Per-sector Motion Persistence Engine
-- Independent Approaching / Stationary / Receding persistence counters
-- Distance heatmap
-- Confidence heatmap
-- Interactive confidence-aware web dashboard
-- Motion persistence visualization
-- Live structured JSON observation viewer
-
-https://github.com/user-attachments/assets/ef46a591-9836-4ce6-ab65-899850638ff6
-
----
-
-# Current Status
-
-| Item | Status |
-|------|:------:|
-| Version | **v2.3.0** |
-| Milestone | **Persistent ToF Observation Engine** |
-| Hardware | Arduino UNO Q + VL53L5CX |
-| ToF Sensors | 1 *(Planned: 6)* |
-| Dashboard | ✅ |
-| 8×8 Distance Sensing | ✅ |
-| Full VL53L5CX Quality Signals | ✅ |
-| Synchronized Sensor Snapshot | ✅ |
-| Zone Confidence | ✅ |
-| Confidence-Aware Sector Selection | ✅ |
-| Observation History | ✅ |
-| Velocity Estimation | ✅ |
-| Velocity Validity | ✅ |
-| Velocity Smoothing | ✅ |
-| Velocity State Classification | ✅ |
-| Motion Persistence Engine | ✅ |
-| Per-State Persistence Counters | ✅ |
-| Multi-Sensor Perception | 🚧 Planned |
-| Context Engine | 🚧 Planned |
-| Attention Engine | 🚧 Planned |
-| Feedback Engine | 🚧 Planned |
-
----
-
-# Dashboard
-
-SixthSense includes a real-time web dashboard for visualizing the complete perception pipeline.
-
-The **v2.3.0 dashboard** displays:
-
-- Sensor information
-- Sensor connection state
-- Arduino Bridge state
-- Frame number
-- Timestamp
-- Effective observation FPS
-- Three logical obstacle sectors
-- Nearest trusted distance per sector
-- Measurement confidence per sector
-- Confidence classification
-- VL53L5CX source zone
-- Relative velocity
-- Velocity state
-- Motion persistence
-- 8×8 distance heatmap
-- 8×8 confidence heatmap
-- Temporal observation history
-- Live structured JSON observation
-- Backend and dashboard versions
-
-Each sector card presents the high-level temporal observation in a compact form:
-
-```text
-Distance             617 mm
-Confidence            81.3 % HIGH
-Zone                  63
-Velocity              -5.0 mm/s
-Velocity State        Stationary
-Motion Persistence    100
-```
-
-`Motion Persistence` is intentionally displayed **without a `%` symbol** because it is a bounded evidence score rather than a calibrated probability.
-
-The JSON viewer additionally exposes all three persistence counters for debugging and future reasoning layers.
-
----
-
-# Why SixthSense?
-
-Most obstacle detection systems answer a single question:
-
-> **"Where is the obstacle?"**
-
-SixthSense aims to progressively answer richer questions:
-
-- Where is the obstacle?
-- How reliable is the measurement?
-- Is the measured range increasing or decreasing?
-- Is the obstacle approximately approaching, stationary, or receding relative to the sensor?
-- How consistently has that velocity state been observed?
-- What is happening around the user?
-- Which information deserves the user's attention?
-- How should that information be communicated?
-
-This progression can be represented as:
-
-```text
-Measurement
-     │
-     ▼
-Confidence
-     │
-     ▼
-Temporal Observation
-     │
-     ▼
-Velocity State
-     │
-     ▼
-Motion Persistence
-     │
-     ▼
-Context
-     │
-     ▼
-Attention
-     │
-     ▼
-Feedback
-```
-
-By separating perception from reasoning, SixthSense builds a foundation that can evolve from simple obstacle detection toward intelligent environmental understanding.
-
----
-
-# Design Philosophy
-
-SixthSense is developed incrementally.
-
-Each software release introduces a focused architectural capability while preserving the existing software foundation.
-
-The project follows four guiding principles:
-
-- **Observation First** — Convert raw sensor measurements into structured observations before performing higher-level reasoning.
-- **Modularity** — Keep architectural responsibilities independent.
-- **Incremental Evolution** — Add and validate one capability at a time.
-- **Scalability** — Design components that naturally extend to multiple sensors.
-
-Detailed implementation and architectural decisions for individual releases are maintained separately in the `docs/` directory.
-
----
-
-# Architecture
-
-SixthSense follows an **Observation-First Architecture**, where every layer has a single, well-defined responsibility.
-
-```text
-Time-of-Flight Sensors
-          │
-          ▼
- Observation Engine
-          │
-          ▼
-  Context Engine
-          │
-          ▼
- Attention Engine
-          │
-          ▼
- Feedback Engine
-          │
-          ▼
-         User
-```
-
-Rather than converting raw sensor measurements directly into user feedback, the system progressively transforms information into increasingly meaningful representations.
-
-This keeps:
-
-- Sensor acquisition
-- Observation generation
-- Environmental reasoning
-- Observation prioritization
-- User feedback
-
-independent.
-
----
-
-# Current Runtime Architecture
-
-The current prototype validates the **Persistent ToF Observation Engine** using a single **SparkFun VL53L5CX Time-of-Flight sensor** connected to an **Arduino UNO Q**.
-
-```text
-VL53L5CX
-    │
-    │  Continuous 15 Hz acquisition
-    ▼
-Arduino UNO Q
-    │
-    ▼
-Live Sensor Buffers
-    │
-    │ capture_snapshot()
-    ▼
-Snapshot Buffers
-    │
-    ▼
-Arduino RouterBridge RPC
-    │
-    ▼
-Python Backend
-    │
-    ├── Confidence Engine
-    │
-    ├── Confidence-Aware Sector Selection
-    │
-    ├── Observation Engine
-    │
-    ├── Velocity Estimation
-    │
-    ├── Velocity Smoothing
-    │
-    ├── Velocity State Classification
-    │
-    ├── Motion Persistence Engine
-    │
-    └── Observation History
-    │
-    ▼
-Structured ToFObservation
-    │
-    ▼
-Interactive Web Dashboard
-```
-
-The Arduino continuously acquires sensor frames.
-
-When the Python backend requests a snapshot, the Arduino copies the current complete sensor state into dedicated snapshot buffers.
-
-Python then retrieves the sensor arrays through the RouterBridge and creates one structured perception observation.
-
-No Arduino firmware changes are required specifically for the Motion Persistence Engine because persistence is derived in Python after temporal velocity processing.
-
----
-
-# VL53L5CX Sensor Data
-
-SixthSense uses more than distance alone.
-
-For each of the 64 VL53L5CX zones, SixthSense acquires:
-
-| Measurement | Purpose |
-|-------------|---------|
-| Distance | Measured target range |
-| Signal per SPAD | Strength/rate of returned ranging signal |
-| Range Sigma | Estimated ranging uncertainty |
-| Target Status | Sensor validity information |
-| Reflectance | Sensor-provided target reflectance information |
-| Ambient per SPAD | Background light activity |
-| Number of Targets | Number of detected targets |
-| SPADs Enabled | Active detector information |
-
-These values are transferred from the Arduino to Python through the snapshot interface.
-
-For clarity, the public sector observation uses explicit names for the SPAD-normalized rates:
-
-```text
-signal_kcps_per_spad
-ambient_kcps_per_spad
-```
-
-The lower-level sensor transport may continue to use shorter internal names such as `signal` and `ambient`.
-
----
-
-# Snapshot-Based Arduino Bridge
-
-SixthSense uses a **snapshot-copy architecture** for transferring a complete sensor state from Arduino to Python.
-
-```text
-Sensor continuously updates LIVE buffers
-                 │
-                 ▼
-        capture_snapshot()
-                 │
-                 ▼
-LIVE buffers copied to SNAPSHOT buffers
-                 │
-                 ▼
-Python retrieves snapshot arrays
-                 │
-                 ▼
-Quality signals correspond to the captured snapshot state
-```
-
-The sensor continues ranging while Python consumes the snapshot.
-
-This avoids permanently locking sensor acquisition and provides a stable interface for the Observation Engine.
-
-The current design should be understood as a snapshot-copy mechanism rather than a formally proven atomic multi-threaded transaction.
-
----
-
-# Confidence Engine
-
-Version **v2.2.1** introduced the SixthSense **Confidence Engine**, which remains part of v2.3.0.
-
-Instead of assuming every measured distance is equally trustworthy, the engine calculates an engineering measurement-quality score for every one of the 64 ToF zones.
-
-The current confidence model combines:
-
-- Target status
-- Signal strength
-- Range sigma
-- Ambient light
-- Reflectance
-- Number of detected targets
-- Enabled SPADs
-
-The current weighting is:
-
-| Signal | Weight |
-|--------|-------:|
-| Target Status | 30% |
-| Signal per SPAD | 30% |
-| Range Sigma | 20% |
-| Ambient per SPAD | 5% |
-| Reflectance | 5% |
-| Targets Detected | 5% |
-| SPADs Enabled | 5% |
-
-Total:
-
-```text
-100%
-```
-
-The confidence score is reported in the range:
-
-```text
-0 – 100
-```
-
----
-
-# Target Status Interpretation
-
-The VL53L5CX documentation provides confidence guidance for target status.
-
-SixthSense currently interprets it conservatively as:
-
-| Target Status | Status Score |
-|--------------:|-------------:|
-| `5` | 1.0 |
-| `6` | 0.5 |
-| `9` | 0.5 |
-| Other statuses | 0.0 in the current implementation |
-
-Statuses outside `5`, `6`, and `9` are therefore rejected by the current confidence-aware obstacle-selection path.
-
-This is an intentional conservative engineering decision.
-
----
-
-# Important Confidence Note
-
-The SixthSense confidence value is currently an **engineering measurement-quality score**.
-
-For example:
-
-```text
-Confidence = 82
-```
-
-means that the current weighted confidence model produces a score of approximately 82/100.
-
-It does **not currently mean**:
-
-```text
-There is exactly an 82% statistical probability
-that the measured distance is correct.
-```
-
-The current model is heuristic and can be refined using controlled sensor characterization and real-world validation data.
-
----
-
-# Confidence Normalization
-
-Different VL53L5CX outputs have different numerical ranges.
-
-SixthSense converts them into normalized values before weighted fusion.
-
-Conceptually:
-
-```text
-Higher-is-better measurement:
-
-score = normalized(value)
-```
-
-Examples:
-
-- Signal strength
-- Reflectance
-- Enabled SPADs
-
-For lower-is-better measurements:
-
-```text
-score = 1 - normalized(value)
-```
-
-Examples:
-
-- Range sigma
-- Ambient light
-
-Signal strength uses logarithmic normalization because the ranging signal can span a comparatively wide dynamic range.
-
-The normalization reference values are engineering parameters and can be recalibrated as additional experimental data becomes available.
-
----
-
-# Confidence-Aware Observation
-
-Sector selection remains confidence-aware in v2.3.0.
-
-The implementation selects the nearest **trusted** zone rather than simply selecting the nearest non-zero distance.
-
-Conceptually:
-
-```text
-All Zones in Sector
-        │
-        ▼
-Distance Valid?
-        │
-        ▼
-Target Detected?
-        │
-        ▼
-Target Status Accepted?
-        │
-        ▼
-Confidence > 0?
-        │
-        ▼
-Nearest Trusted Zone
-        │
-        ▼
-Sector Observation
-```
-
-This prevents an unusable measurement from becoming the primary sector observation simply because its reported distance happens to be the smallest.
-
----
-
-# Observation Engine
-
-The Observation Engine remains the core perception component of SixthSense.
-
-Its responsibility is to convert Time-of-Flight sensor information into structured observations.
-
-Current capabilities include:
-
-- Three-sector spatial observation model
-- Confidence-aware obstacle selection
-- Observation history
-- Temporal processing
-- Relative velocity estimation
-- Velocity validity tracking
-- Velocity smoothing
-- Velocity state classification
-- Motion persistence estimation
-- Raw quality information attached to selected observations
-
-The processing order is:
-
-```text
-VL53L5CX Snapshot
-        │
-        ▼
-Confidence Engine
-        │
-        ▼
-Nearest Trusted Zone
-        │
-        ▼
-Sector Observation
-        │
-        ▼
-Velocity Estimation
-        │
-        ▼
-Velocity Smoothing
-        │
-        ▼
-Velocity State Classification
-        │
-        ▼
-Motion Persistence Engine
-        │
-        ▼
-ToFObservation
-```
-
-The Observation Engine performs **perception only**.
-
-Environmental understanding, prioritization, navigation reasoning, and user feedback are intentionally handled by future architectural layers.
-
----
-
-# Three-Sector Observation Model
-
-The oriented 8×8 ToF image is currently divided into three logical sectors:
-
-```text
-Column:
-
-0  1 | 2  3  4 | 5  6  7
-
-─────   ───────   ───────
- S0       S1        S2
-```
-
-Each sector produces one `SectorObservation`.
-
-The current sector observation contains:
-
-- Sector identifier
-- Sector name
-- Nearest trusted distance
-- Source VL53L5CX zone
-- Confidence score
-- Signal per SPAD
-- Range sigma
-- Target status
-- Reflectance
-- Ambient per SPAD
-- Number of detected targets
-- Enabled SPADs
-- Relative velocity
-- Velocity validity
-- Velocity state
-- Motion persistence
-- Approaching persistence counter
-- Stationary persistence counter
-- Receding persistence counter
-
----
-
-# Temporal Observation
-
-SixthSense maintains a history of recent processed observations.
-
-Current observation-history capacity:
-
-```text
-20 observations
-```
-
-Temporal information enables the system to estimate relative range velocity.
-
-For each sector:
-
-```text
-velocity =
-    (current_distance - previous_distance)
-    /
-    time_difference
-```
-
-Interpretation:
-
-```text
-Negative velocity  -> range is decreasing
-Positive velocity  -> range is increasing
-Near zero          -> approximately stationary range
-```
-
-The current velocity-state threshold is:
-
-```text
-velocity < -50 mm/s  -> Approaching
-velocity > +50 mm/s  -> Receding
-otherwise            -> Stationary
-```
-
-The velocity represents **relative range change**, not full 2-D or 3-D object velocity.
-
----
-
-# Confidence and Velocity Validity
-
-Confidence participates in velocity estimation as a **validity gate**.
-
-Velocity is calculated only when both the current and previous sector observations provide usable trusted distances.
-
-Conceptually:
-
-```text
-Current trusted distance?
-        │
-        ├── No  -> velocity_valid = false
-        │
-        ▼
-Previous trusted distance?
-        │
-        ├── No  -> velocity_valid = false
-        │
-        ▼
-Calculate relative velocity
-        │
-        ▼
-velocity_valid = true
-```
-
-The numerical confidence score is **not multiplied into the physical velocity value**.
-
-For example, a lower but still accepted confidence value does not artificially reduce the calculated range velocity.
-
----
-
-# Velocity Smoothing
-
-SixthSense uses a short per-sector velocity history to reduce frame-to-frame noise.
-
-Current smoothing capacity:
-
-```text
-5 valid velocity samples
-```
-
-Only valid velocity samples are inserted into the velocity smoothing history.
-
-An unavailable velocity is therefore not inserted as a synthetic zero measurement.
-
-This distinction is important because:
-
-```text
-velocity = 0, velocity_valid = true
-```
-
-means a valid velocity estimate that is near zero, while:
-
-```text
-velocity = 0, velocity_valid = false
-```
-
-means that velocity could not be calculated from the current transition.
-
----
-
-# Velocity State
-
-Version v2.3.0 explicitly distinguishes valid velocity classification from unavailable velocity.
-
-The possible states are:
-
-```text
-Approaching
-Stationary
-Receding
-Unknown
-```
-
-Classification follows:
-
-```text
-velocity_valid = false
-        │
-        ▼
-      Unknown
-```
-
-Otherwise:
-
-```text
-velocity < -50 mm/s
-        │
-        ▼
-   Approaching
-
--50 mm/s <= velocity <= +50 mm/s
-        │
-        ▼
-    Stationary
-
-velocity > +50 mm/s
-        │
-        ▼
-     Receding
-```
-
-This prevents an invalid placeholder numerical zero from being incorrectly interpreted as a genuine Stationary observation.
-
----
-
-# Motion Persistence Engine
-
-Version **v2.3.0** introduces the **Motion Persistence Engine**.
-
-The engine answers a focused temporal question:
-
-> **How consistently has the current velocity state been observed in this sector?**
-
-It maintains three independent counters for every logical sector:
-
-```text
-Approaching
-Stationary
-Receding
-```
-
-Each counter is bounded to:
-
-```text
-0 ... 100
-```
-
-The update rule is symmetric.
-
-## Approaching Observation
-
-```text
-Approaching += 1
-Stationary  -= 1
-Receding    -= 1
-```
-
-## Stationary Observation
-
-```text
-Approaching -= 1
-Stationary  += 1
-Receding    -= 1
-```
-
-## Receding Observation
-
-```text
-Approaching -= 1
-Stationary  -= 1
-Receding    += 1
-```
-
-## Unknown or Other Observation
-
-```text
-Approaching -= 1
-Stationary  -= 1
-Receding    -= 1
-```
-
-All operations are clamped to the valid range.
-
-The current state's counter is published as:
-
-```text
-motion_persistence
-```
-
-The complete internal state is also exposed as:
-
-```json
-"motion_persistence_counters": {
-    "approaching": 0,
-    "stationary": 100,
-    "receding": 0
-}
-```
-
----
-
-# Motion Persistence Semantics
-
-Motion persistence is intentionally simple and interpretable.
-
-For example, after many consistent `Approaching` observations:
-
-```text
-Approaching = 80
-Stationary  = 3
-Receding    = 0
-```
-
-If the next observation is `Stationary`:
-
-```text
-Approaching = 79
-Stationary  = 4
-Receding    = 0
-```
-
-If `Approaching` resumes, the approaching counter can continue to recover.
-
-This provides temporal memory without requiring object tracking.
-
----
-
-# Important Motion Persistence Note
-
-`motion_persistence` is **not**:
-
-- A probability
-- A percentage
-- Measurement confidence
-- Obstacle-presence probability
-- Same-object tracking confidence
-- An object identifier
-
-It is a bounded **observation-based temporal consistency score for velocity classification**.
-
-At an effective backend processing rate of approximately 5 observations per second:
-
-```text
-100 consecutive consistent classifications
-≈ 20 seconds
-```
-
-At approximately 6 observations per second:
-
-```text
-100 consecutive consistent classifications
-≈ 16.7 seconds
-```
-
-Therefore the current persistence score is **observation-count based**, not explicitly time-normalized.
-
----
-
-# Invalid Velocity and Persistence
-
-When the system cannot calculate a valid velocity from the current and previous observations:
-
-```text
-velocity_valid = false
-velocity_state = Unknown
-```
-
-The Persistence Engine then applies its general "other classification" rule:
-
-```text
-Approaching -= 1
-Stationary  -= 1
-Receding    -= 1
-```
-
-This prevents an unavailable velocity from strengthening the Stationary persistence counter.
-
-If no new sensor observation is processed at all, the Persistence Engine is not updated and the counters remain unchanged.
-
----
-
-# ToFObservation
-
-Every successfully processed sensor snapshot generates one structured **ToFObservation**.
-
-A simplified v2.3.0 representation is:
-
-```json
-{
-    "sensor_id": "tof_01",
-    "sensor_name": "Prototype ToF",
-    "status": "ONLINE",
-    "frame_number": 1258,
-    "timestamp": 121478,
-    "fps": 5.5,
-    "history_size": 20,
-    "sectors": [
-        {
-            "sector_id": 0,
-            "sector_name": "Sector 0",
-            "distance_mm": 617,
-            "zone_id": 63,
-            "confidence": 81.3,
-            "signal_kcps_per_spad": 121,
-            "sigma": 6,
-            "target_status": 5,
-            "reflectance": 115,
-            "ambient_kcps_per_spad": 127,
-            "targets": 1,
-            "spads": 4096,
-            "velocity_mmps": -5.0,
-            "velocity_valid": true,
-            "velocity_state": "Stationary",
-            "motion_persistence": 100,
-            "motion_persistence_counters": {
-                "approaching": 0,
-                "stationary": 100,
-                "receding": 0
-            }
-        }
-    ]
-}
-```
-
-Higher-level modules can consume this structured observation rather than interacting directly with raw sensor arrays.
-
----
-
-# Dashboard Heatmaps
-
-## Distance Heatmap
-
-The distance heatmap visualizes all 64 ToF ranging zones.
-
-Conceptually:
-
-```text
-Near obstacle
-     ↓
-    Red → Orange → Yellow → Green
-                              ↑
-                         Far obstacle
-```
-
-## Confidence Heatmap
-
-The confidence heatmap visualizes the measurement-quality score associated with each zone.
-
-```text
-Low confidence
-     ↓
-    Red → Orange → Yellow → Green
-                              ↑
-                        High confidence
-```
-
-Zones that fail the current validity checks are displayed as zero-confidence measurements.
-
-The dashboard therefore makes it possible to compare:
-
-```text
-What the sensor measured
-```
-
-against:
-
-```text
-How much the current confidence model trusts the measurement
-```
-
-The sector cards additionally expose the temporal interpretation:
-
-```text
-Relative Velocity
-Velocity State
-Motion Persistence
-```
-
----
-
-# Current Capabilities
-
-Version **v2.3.0** provides:
-
-| Capability | Status |
-|------------|:------:|
-| 8×8 ToF ranging | ✅ |
-| Static obstacle observation | ✅ |
-| Temporal observation history | ✅ |
-| Relative velocity estimation | ✅ |
-| Velocity validity tracking | ✅ |
-| Velocity state classification | ✅ |
-| Unknown state for invalid velocity | ✅ |
-| Valid-only velocity smoothing | ✅ |
-| Complete VL53L5CX quality acquisition | ✅ |
-| Arduino snapshot transport | ✅ |
-| 64-zone confidence estimation | ✅ |
-| Confidence-aware sector selection | ✅ |
-| Motion Persistence Engine | ✅ |
-| Per-state persistence counters | ✅ |
-| Distance heatmap | ✅ |
-| Confidence heatmap | ✅ |
-| Interactive web dashboard | ✅ |
-| Live JSON observations | ✅ |
-| Multi-sensor support | 🚧 Planned |
-| Context reasoning | 🚧 Planned |
-| Attention model | 🚧 Planned |
-| User feedback engine | 🚧 Planned |
-
----
-
-# Current Scope
-
-The current implementation intentionally focuses on **perception**.
-
-It does not yet attempt to:
-
-- Identify or track individual physical objects
-- Fuse measurements from multiple ToF sensors
-- Infer complete environmental context
-- Estimate user intent
-- Prioritize observations
-- Generate navigation decisions
-- Produce haptic feedback
-- Produce spatial audio feedback
-
-Motion persistence should not be confused with same-object tracking.
-
-If a selected zone changes within the same logical sector, the Persistence Engine continues to operate on the sector's velocity-state sequence.
-
----
-
-# Hardware & Software
-
-## Current Hardware
-
-| Component | Quantity |
-|-----------|---------:|
-| Arduino UNO Q | 1 |
-| SparkFun VL53L5CX Time-of-Flight Sensor | 1 |
-| Qwiic JST Cable | 1 |
-| USB-C Cable | 1 |
-
-The current prototype intentionally uses a single ToF sensor to validate the perception architecture before scaling to multiple sensors.
-
-Future releases will expand the system toward multiple independently observed directions.
-
-<img width="960" height="1280" alt="Arduino UNO Q with VL53L5CX" src="https://github.com/user-attachments/assets/4968e3f6-217f-41ab-af97-992710e7f006" />
-
----
-
-## Software Stack
+Confidence is not repeated as a second condition in the Attention Engine because it has already determined whether a zone can become the sector observation and whether a valid velocity can be produced. This keeps instantaneous measurement quality separate from temporal motion evidence.
+
+If several sectors qualify simultaneously, their motor masks are combined with bitwise OR. Therefore the user can receive more than one directional cue at once.
+
+## Haptic motor map
+
+| Motor | Direction | Mask bit | Hex value | Arduino PWM pin |
+|---|---|---:|---:|---:|
+| M1 | Front | bit 0 | `0x01` | D5 |
+| M2 | Left | bit 1 | `0x02` | D6 |
+| M3 | Rear | bit 2 | `0x04` | D9 |
+| M4 | Right | bit 3 | `0x08` | D10 |
+
+The full 18-sector mapping is:
+
+| ToF sensor | Sector | Approximate direction | Motor output | Mask |
+|---|:---:|---|---|---:|
+| T1 Front-right | S0 | Right | M4 | `0x08` |
+| T1 Front-right | S1 | Front-right | M1 + M4 | `0x09` |
+| T1 Front-right | S2 | Front-right | M1 + M4 | `0x09` |
+| T2 Front | S0 | Front-right | M1 + M4 | `0x09` |
+| T2 Front | S1 | Front | M1 | `0x01` |
+| T2 Front | S2 | Front-left | M1 + M2 | `0x03` |
+| T3 Front-left | S0 | Front-left | M1 + M2 | `0x03` |
+| T3 Front-left | S1 | Front-left | M1 + M2 | `0x03` |
+| T3 Front-left | S2 | Left | M2 | `0x02` |
+| T4 Rear-left | S0 | Left | M2 | `0x02` |
+| T4 Rear-left | S1 | Rear-left | M2 + M3 | `0x06` |
+| T4 Rear-left | S2 | Rear-left | M2 + M3 | `0x06` |
+| T5 Rear | S0 | Rear-left | M2 + M3 | `0x06` |
+| T5 Rear | S1 | Rear | M3 | `0x04` |
+| T5 Rear | S2 | Rear-right | M3 + M4 | `0x0C` |
+| T6 Rear-right | S0 | Rear-right | M3 + M4 | `0x0C` |
+| T6 Rear-right | S1 | Rear-right | M3 + M4 | `0x0C` |
+| T6 Rear-right | S2 | Right | M4 | `0x08` |
+
+## Feedback safety behavior
+
+The Python Feedback Engine sends a new mask when the requested state changes and refreshes the current mask every 500 ms. The MCU returns the applied mask, which is shown on the dashboard.
+
+If commands stop for 1000 ms while a motor is active, the MCU watchdog turns all motors off. The mask is also constrained to the low four bits before being applied.
+
+> Never power a vibration motor directly from an Arduino GPIO. Use a suitable driver stage, respect the motor and driver voltage/current ratings, and connect the logic and motor-supply grounds together.
+
+## Dashboard
+
+The v3.0.0 WebUI shows:
+
+- Online state, frame number, and effective FPS for T1–T6
+- S0/S1/S2 observations for all six sensors
+- A selectable detailed sensor view
+- 4×4 distance and confidence heatmaps
+- Source zone, velocity, velocity state, and persistence
+- Attention activation rule and active source sectors
+- Requested and applied motor masks
+- MCU-confirmed active motors in their physical front/left/rear/right arrangement
+- Complete structured JSON output
+
+The applied mask is the best dashboard representation of the motors the MCU has accepted. Physical vibration should still be verified during hardware testing.
+
+## Hardware
+
+| Component | Quantity | Purpose |
+|---|---:|---|
+| Arduino UNO Q | 1 | MCU acquisition, MPU processing, and WebUI |
+| VL53L5CX ToF sensor | 6 | Six-direction ranging |
+| 8-channel I2C multiplexer at `0x70` | 1 | Isolates sensors sharing address `0x29` |
+| Vibration motor | 4 | Directional haptic output |
+| Motor-driver channels | 4 | GPIO-safe motor switching/PWM |
+| Suitable motor supply | 1 | Powers the motors within their ratings |
+| Cables, connectors, and mounting hardware | as required | Prototype assembly |
+
+Two dual-channel motor-driver modules can provide four channels. For one-direction vibration control, wire each channel in accordance with its driver's truth table; do not leave control inputs floating.
+
+## Software stack
 
 | Layer | Technology |
-|------|------------|
-| Firmware | Arduino Sketch / C++ |
-| Sensor Library | SparkFun VL53L5CX Arduino Library |
-| MCU ↔ MPU Communication | Arduino RouterBridge RPC |
-| Backend | Python |
-| Numerical Processing | NumPy |
-| Frontend | HTML, CSS, JavaScript |
-| Dashboard | Arduino App Lab WebUI |
-| Real-Time Browser Communication | Socket.IO |
+|---|---|
+| Firmware | Arduino / C++ on Arduino Zephyr |
+| Sensor library | SparkFun VL53L5CX Arduino Library 1.0.3 |
+| MCU–MPU communication | Arduino RouterBridge RPC |
+| Backend | Python and NumPy |
+| Browser UI | HTML, CSS, JavaScript, Arduino WebUI |
 
----
-
-# Repository Structure
+## Repository structure
 
 ```text
 sixthsense/
-│
 ├── README.md
-├── LICENSE
 ├── app.yaml
-│
-├── sketch/
-│   └── sketch.ino
-│
-├── python/
-│   └── main.py
-│
 ├── assets/
 │   ├── index.html
-│   ├── style.css
 │   ├── app.js
+│   ├── style.css
 │   └── libs/
-│
-└── docs/
-    ├── CHANGELOG.md
-    ├── SixthSense_v2.0.0.md
-    ├── SixthSense_v2.1.0.md
-    ├── SixthSense_v2.2.1.md
-    └── ...
+├── docs/
+│   ├── CHANGELOG.md
+│   ├── SixthSense_v2.0.0.md
+│   ├── SixthSense_v2.1.0.md
+│   ├── SixthSense_v2.2.1.md
+│   ├── SixthSense_v2.3.0.md
+│   └── SixthSense_v3.0.0.md
+├── python/
+│   └── main.py
+└── sketch/
+    ├── sketch.ino
+    └── sketch.yaml
 ```
 
-The **README** provides the high-level project overview.
-
-The `docs/` directory contains detailed design and release documentation.
-
----
-
-# Development
-
-SixthSense follows an incremental development workflow.
-
-Development is performed on:
-
-```text
-develop
-```
-
-Stable, tested versions are merged into:
-
-```text
-main
-```
-
-Typical workflow:
-
-```text
-feature / implementation
-        │
-        ▼
-     develop
-        │
-        ├── integration
-        ├── validation
-        ├── documentation
-        └── dashboard testing
-        │
-        ▼
-      main
-        │
-        ▼
- GitHub Release / Tag
-```
-
-Each release should be independently:
-
-- Functional
-- Testable
-- Documented
-- Reviewable
-
-before being merged into `main`.
-
----
-
-# Release Evolution
-
-```text
-v2.0.0
-Static Observation
-        │
-        ▼
-v2.1.0
-Temporal Observation
-        │
-        ▼
-v2.2.1
-Confidence-Aware
-Temporal Observation
-        │
-        ▼
-v2.3.0
-Motion Persistence
-        │
-        ▼
-v3.0.0
-Multi-Sensor Perception
-        │
-        ▼
-v4.0.0
-Context
-        │
-        ▼
-v5.0.0
-Attention
-        │
-        ▼
-v6.0.0
-Feedback
-        │
-        ▼
-v7.0.0
-Complete Prototype
-```
+## Getting started
 
----
+1. Clone or import this repository into Arduino App Lab on the Arduino UNO Q.
+2. Connect the six ToF sensors through the configured I2C multiplexer channels.
+3. Connect M1–M4 through motor-driver channels to D5, D6, D9, and D10, or update `MOTOR_PWM_PINS` to match the tested wiring.
+4. Verify motor voltage, current capability, common ground, and driver input states before applying motor power.
+5. Build and upload `sketch/sketch.ino` using the dependencies in `sketch/sketch.yaml`.
+6. Run `python/main.py` through the Arduino application environment.
+7. Open the WebUI, confirm all six sensors are online, and test one sensor-sector/motor path at a time before wearing the system.
 
-# Roadmap
+## Current validation status
 
-| Version | Milestone | Status |
-|---------|-----------|:------:|
-| **v2.0.0** | Static ToF Observation Engine | ✅ |
-| **v2.1.0** | Temporal ToF Observation Engine | ✅ |
-| **v2.2.1** | Confidence-Aware Temporal ToF Observation Engine | ✅ |
-| **v2.3.0** | Persistent ToF Observation Engine | ✅ |
-| **v3.0.0** | Multi-ToF Sensor Integration | 🚧 |
-| **v4.0.0** | Context Engine | 🚧 |
-| **v5.0.0** | Attention Engine | 🚧 |
-| **v6.0.0** | Feedback Engine | 🚧 |
-| **v7.0.0** | Complete SixthSense Prototype | 🎯 |
+The prototype has been exercised with a persistence activation threshold of 10, and further tuning is planned. The source records an approximate retrieved sensor rate of 14 Hz under the tested configuration.
 
----
+Recommended validation cases include:
 
-# Future Direction
+- Every one of the 18 sensor-sector mappings individually
+- Single-motor and adjacent two-motor cues
+- Simultaneous active sectors and bitwise-OR mask composition
+- Approaching sequences immediately below and at the threshold
+- State transitions and invalid measurements
+- Motor-command interruption and watchdog shutdown
+- Bright, dark, reflective, and low-reflectance targets
+- Stationary sensor/target and deliberate head or rig motion
 
-Version v2.3.0 establishes a **confidence-aware temporal perception layer with motion-state persistence**.
+## Known limitations
 
-The next major steps are expected to include:
+- Confidence is heuristic and not statistically calibrated.
+- Velocity is relative range change and is affected by sensor or head motion.
+- Persistence is observation-count based and therefore changes in time duration with FPS.
+- Sector persistence does not track object identity.
+- Simultaneous sectors are combined; the current Attention Engine does not rank hazards by urgency.
+- No Time-to-Collision calculation is included in v3.0.0.
+- No trained machine-learning model is used; the current Physical AI pipeline is deterministic and interpretable.
+- The prototype is not a certified mobility or safety device and must not be relied on as the sole navigation aid.
 
-### Multi-Sensor Perception
+## Release history
 
-Scale the architecture from one ToF sensor to multiple independently observed directions while preserving a consistent observation interface.
+| Version | Milestone |
+|---|---|
+| v2.0.0 | Static ToF Observation Engine |
+| v2.1.0 | Temporal ToF Observation Engine |
+| v2.2.1 | Confidence-Aware Temporal Observation Engine |
+| v2.3.0 | Motion Persistence Engine |
+| **v3.0.0** | **Multi-ToF Attention and Haptic Feedback Prototype** |
 
-### Context Engine
+The earlier roadmap assigned separate future major numbers to multi-sensor, context, attention, and feedback work. During v3 development, the multi-sensor, attention, and feedback milestones were integrated into one coherent release. The version remains v3.0.0 because it is the next release after v2.3.0 and the implementation identifies itself as 3.0.0.
 
-Combine observations into a meaningful representation of the surrounding environment.
+## Documentation
 
-### Attention Engine
+- [v3.0.0 release and architecture notes](docs/SixthSense_v3.0.0.md)
+- [Changelog](docs/CHANGELOG.md)
+- [v2.3.0 documentation](docs/SixthSense_v2.3.0.md)
 
-Determine which observations are most relevant and require user attention.
+## Development workflow
 
-### Feedback Engine
+Active integration is performed on `develop`. Stable, tested, documented releases are merged into `main` and tagged.
 
-Translate prioritized environmental information into intuitive:
+Contributions should be made through a focused branch and pull request. Please include implementation notes and validation evidence for changes that affect sensing, attention decisions, or feedback safety.
 
-- Haptic guidance
-- Spatial audio guidance
-- Navigation cues
+## License
 
-The long-term objective is to develop a modular Physical AI perception framework that cleanly separates:
+SixthSense source files declare the [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/) using SPDX identifiers.
 
-```text
-Perception
-    ↓
-Understanding
-    ↓
-Prioritization
-    ↓
-Feedback
-```
+## Acknowledgements
 
----
-
-# Known Limitations
-
-Version v2.3.0 has several intentional limitations.
-
-### Single Sensor
-
-Only one VL53L5CX sensor is currently integrated.
-
-### Heuristic Confidence
-
-The confidence model is an engineering quality score and has not yet been statistically calibrated against large-scale ground-truth datasets.
-
-### Relative Range Velocity Only
-
-Velocity is estimated from successive sector distances.
-
-It represents relative range change rather than complete object motion or world-frame velocity.
-
-### Sector-Level Motion Persistence
-
-Persistence is maintained independently per logical sector.
-
-It does not prove that the same physical object generated every observation in the sequence.
-
-### No Object Tracking
-
-The current implementation does not associate detections with persistent object identities.
-
-Motion persistence therefore represents consistency of the sector's velocity classification, not same-object persistence.
-
-### Observation-Based Persistence
-
-Persistence increments and decrements once per processed observation.
-
-It is not currently normalized by elapsed wall-clock time.
-
-### Effective Backend Observation Rate
-
-The VL53L5CX is configured for higher-rate sensor acquisition, while the Python backend performs multiple RouterBridge calls per snapshot.
-
-The backend may therefore process fewer observations per second than the underlying sensor acquisition frequency.
-
-### Persistence Memory Across Measurement Gaps
-
-Invalid velocity transitions do not enter the smoothing history and are classified as `Unknown`.
-
-The current implementation does not perform explicit object re-identification across measurement gaps.
-
----
-
-# Validation
-
-The current prototype has been validated through live Arduino UNO Q testing with the VL53L5CX.
-
-Observed functionality includes:
-
-- Sensor initialization
-- Continuous ranging
-- 8×8 distance acquisition
-- Complete sensor quality acquisition
-- Snapshot-based Bridge transport
-- 64-zone confidence computation
-- Confidence-aware sector selection
-- Relative velocity calculation
-- Velocity validity handling
-- Valid-only velocity smoothing
-- Velocity state classification
-- `Unknown` state handling
-- Motion persistence counter updates
-- Persistence saturation at 0 and 100
-- Independent per-sector persistence
-- Distance heatmap visualization
-- Confidence heatmap visualization
-- Real-time dashboard updates
-- Motion persistence dashboard display
-- Live structured JSON observations
-
-Recommended v2.3.0 persistence validation cases include:
-
-- Continuous Stationary observations
-- Continuous Approaching observations
-- Continuous Receding observations
-- Single-state glitches
-- Sustained state transitions
-- Unknown / invalid velocity transitions
-- Counter saturation at 100
-- Counter floor at 0
-- Independent behavior across sectors
-- Zone changes within the same sector
-
----
-
-# Documentation
-
-Detailed implementation notes are maintained in the `docs/` directory.
-
-```text
-docs/
-
-├── CHANGELOG.md
-├── SixthSense_v2.0.0.md
-├── SixthSense_v2.1.0.md
-├── SixthSense_v2.2.1.md
-└── ...
-```
-
-The version-specific documents describe:
-
-- Architecture
-- Design decisions
-- Data flow
-- Algorithms
-- Implementation details
-- Validation
-- Known limitations
-- Future extensions
-
----
-
-# Contributing
-
-Contributions are welcome.
-
-Areas where contributions can have significant impact include:
-
-- Time-of-Flight perception
-- Sensor confidence modelling
-- Sensor characterization
-- Temporal perception
-- Motion persistence
-- Embedded firmware
-- Python perception algorithms
-- Multi-sensor architecture
-- Dashboard improvements
-- Assistive navigation algorithms
-- Validation
-- Documentation
-
-If you plan to contribute:
-
-1. Fork the repository.
-2. Create a feature branch from `develop`.
-3. Implement and test the change.
-4. Update relevant documentation.
-5. Submit a Pull Request.
-
-For bug reports and feature requests, use **GitHub Issues**.
-
-For architectural discussions and ideas, use **GitHub Discussions** when available for the repository.
-
----
-
-# Citation
-
-If you use SixthSense in your research or build upon this project, please consider citing the repository.
-
-```text
-Eswara Venkata Kumar Dhulipala
-
-SixthSense:
-A Modular Physical AI Perception Framework
-for Assistive Navigation.
-
-GitHub Repository
-
-https://github.com/Eswara-Venkata-Kumar-Dhulipala/SixthSense
-```
-
----
-
-# License
-
-SixthSense is released under the **Mozilla Public License 2.0 (MPL-2.0)**.
-
-See the `LICENSE` file for the complete license.
-
----
-
-# Acknowledgements
-
-SixthSense builds upon an excellent open-source hardware and software ecosystem.
-
-Special thanks to:
-
-- Arduino
-- Arduino App Lab
-- SparkFun Electronics
-- STMicroelectronics
-- Python Community
-- NumPy Community
-- Open Source Community
-
-Their hardware, libraries, development tools, documentation, and open-source contributions make projects like SixthSense possible.
-
----
-
-# Contact
-
-Questions, suggestions, bug reports, architectural discussions, and contributions are welcome.
-
-Please use:
-
-- GitHub Issues
-- Pull Requests
-- Repository discussions when available
-
-Constructive feedback and contributions are greatly appreciated.
+SixthSense builds on the Arduino, SparkFun, STMicroelectronics, Python, NumPy, and open-source communities.
 
 ---
 
 <div align="center">
 
-### SixthSense
-
-**Perception → Confidence → Temporal Motion → Persistence → Understanding → Attention → Feedback**
+**Perception → Confidence → Temporal Motion → Persistence → Attention → Haptic Feedback**
 
 </div>
